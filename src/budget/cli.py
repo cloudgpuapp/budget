@@ -7,14 +7,63 @@ from budget.analyze import build_budget
 from budget.config import ConfigError, get_env, load_toml
 from budget.display import print_section
 from budget.sheets import Resource, build_service, fetch_cells, list_sheet_names
+from budget.retirement_forecast import (
+    RetirementForecastConfig,
+    get_current_retirement_savings_contributions,
+    get_total_retirement_savings_balance,
+    run_retirement_forecast,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Fetch and display budget data from Google Sheets."
+        description="Fetch budget data from Google Sheets or run the retirement forecast."
     )
+    subparsers = parser.add_subparsers(dest="command")
+
+    sheets_parser = subparsers.add_parser(
+        "sheets",
+        help="Fetch and display monthly budget data.",
+    )
+    sheets_parser.set_defaults(command="sheets")
+
+    forecast_parser = subparsers.add_parser(
+        "retirement-forecast",
+        help="Run the retirement Monte Carlo forecast.",
+    )
+    forecast_parser.add_argument(
+        "--csv-path",
+        help="Path to the historical returns/inflation CSV.",
+    )
+    forecast_parser.add_argument(
+        "--initial-balance",
+        type=float,
+        help="Override the resolved retirement balance.",
+    )
+    forecast_parser.add_argument(
+        "--monthly-contribution",
+        type=float,
+        help="Override the resolved monthly retirement contribution.",
+    )
+    forecast_parser.add_argument(
+        "--account-patterns",
+        help="Comma-separated account name patterns to match in the Balances sheet.",
+    )
+    forecast_parser.add_argument(
+        "--contribution-patterns",
+        help="Comma-separated label patterns to match in the latest budget.",
+    )
+    forecast_parser.add_argument(
+        "--contribution-fields",
+        help="Comma-separated exact labels to sum from the latest budget.",
+    )
+    forecast_parser.add_argument(
+        "--summary-keys",
+        help="Comma-separated summary keys to check before scanning budget rows.",
+    )
+
     parser.add_argument(
         "--log-level",
         default="INFO",
@@ -31,37 +80,120 @@ def main():
     config = load_toml()
     cells_config = config.get("cells", {})
     summary_config = config.get("summary", {})
+    sheet_pattern = config.get("spreadsheet", {}).get("sheet_pattern")
 
-    if not cells_config:
-        raise ConfigError("Error: no [cells.*] sections found in config.toml")
+    if args.command in (None, "sheets"):
+        if not cells_config:
+            raise ConfigError("Error: no [cells.*] sections found in config.toml")
 
-    all_refs = list(
-        dict.fromkeys(
-            ref for labels in cells_config.values() for ref in labels.values()
+        all_refs = list(
+            dict.fromkeys(
+                ref for labels in cells_config.values() for ref in labels.values()
+            )
         )
-    )
 
-    if not all_refs:
-        raise ConfigError("Error: no cell references defined in config.toml")
+        if not all_refs:
+            raise ConfigError("Error: no cell references defined in config.toml")
 
-    logger.info("Connecting to Google Sheets...")
-    service: Resource = build_service(key_file)
+        logger.info("Connecting to Google Sheets...")
+        service: Resource = build_service(key_file)
 
-    for sheet in list_sheet_names(
-        service,
-        spreadsheet_id,
-        pattern=config.get("spreadsheet", {}).get("sheet_pattern"),
-    ):
-        logger.info(f"Fetching {len(all_refs)} cell(s) from sheet '{sheet}'...")
-        cell_values = fetch_cells(service, spreadsheet_id, sheet, all_refs)
-        budget = build_budget(cells_config, cell_values, summary_config)
+        for sheet in list_sheet_names(service, spreadsheet_id, pattern=sheet_pattern):
+            logger.info(f"Fetching {len(all_refs)} cell(s) from sheet '{sheet}'...")
+            cell_values = fetch_cells(service, spreadsheet_id, sheet, all_refs)
+            budget = build_budget(cells_config, cell_values, summary_config)
 
-        print(f"\n{'═' * 45}")
-        print(f"  {sheet}")
-        print(f"{'═' * 45}")
+            print(f"\n{'═' * 45}")
+            print(f"  {sheet}")
+            print(f"{'═' * 45}")
 
-        for section_name, rows in budget.items():
-            print_section(section_name, rows)
+            for section_name, rows in budget.items():
+                print_section(section_name, rows)
+        return
+
+    if args.command == "retirement-forecast":
+        forecast_config = RetirementForecastConfig(
+            csv_path=args.csv_path or RetirementForecastConfig().csv_path,
+            current_age=RetirementForecastConfig().current_age,
+            retirement_age=RetirementForecastConfig().retirement_age,
+            life_expectancy=RetirementForecastConfig().life_expectancy,
+            block_length_months=RetirementForecastConfig().block_length_months,
+            n_simulations=RetirementForecastConfig().n_simulations,
+            random_seed=RetirementForecastConfig().random_seed,
+            target_real_balance=RetirementForecastConfig().target_real_balance,
+            contribution_mode=RetirementForecastConfig().contribution_mode,
+        )
+
+        service: Resource = build_service(key_file)
+        sheet_names = list_sheet_names(service, spreadsheet_id, pattern=sheet_pattern)
+        sheet_names.sort()
+        latest_sheet = sheet_names[-1] if sheet_names else None
+        latest_budget = None
+        if latest_sheet and cells_config:
+            all_refs = list(
+                dict.fromkeys(
+                    ref for labels in cells_config.values() for ref in labels.values()
+                )
+            )
+            if all_refs:
+                logger.info(f"Fetching latest budget sheet '{latest_sheet}'...")
+                cell_values = fetch_cells(service, spreadsheet_id, latest_sheet, all_refs)
+                latest_budget = build_budget(cells_config, cell_values, summary_config)
+
+        account_patterns = (
+            tuple(s.strip() for s in args.account_patterns.split(",") if s.strip())
+            if args.account_patterns
+            else None
+        )
+        contribution_patterns = (
+            tuple(s.strip() for s in args.contribution_patterns.split(",") if s.strip())
+            if args.contribution_patterns
+            else None
+        )
+        contribution_fields = (
+            tuple(s.strip() for s in args.contribution_fields.split(",") if s.strip())
+            if args.contribution_fields
+            else None
+        )
+        summary_keys = (
+            tuple(s.strip() for s in args.summary_keys.split(",") if s.strip())
+            if args.summary_keys
+            else None
+        )
+
+        result = run_retirement_forecast(
+            config=forecast_config,
+            initial_balance=args.initial_balance
+            if args.initial_balance is not None
+            else get_total_retirement_savings_balance(
+                service=service,
+                spreadsheet_id=spreadsheet_id,
+                account_patterns=account_patterns,
+            ),
+            monthly_contribution=args.monthly_contribution
+            if args.monthly_contribution is not None
+            else get_current_retirement_savings_contributions(
+                latest_budget=latest_budget,
+                contribution_patterns=contribution_patterns,
+                contribution_fields=contribution_fields,
+                summary_keys=summary_keys,
+            ),
+            latest_budget=latest_budget,
+            account_patterns=account_patterns,
+            contribution_patterns=contribution_patterns,
+        )
+
+        print("\nRETIREMENT FORECAST")
+        print(f"Initial balance: ${result.initial_balance:,.2f}")
+        print(f"Monthly contribution: ${result.monthly_contribution:,.2f}")
+        print(
+            f"P(real terminal wealth >= ${result.config.target_real_balance:,.0f}) = "
+            f"{result.probability_of_reaching_target:.1%}"
+        )
+        print(result.summary.to_string())
+        return
+
+    raise ConfigError(f"Unknown command: {args.command}")
 
 
 if __name__ == "__main__":

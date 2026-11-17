@@ -16,11 +16,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, unquote
 
-from cache import budget_cache
 from dotenv import load_dotenv
 from flask import Flask, redirect, render_template, url_for
 
 from budget.analyze import build_budget
+from budget.cache import budget_cache
 from budget.config import ConfigError, get_env, load_toml
 from budget.sheets import build_service, fetch_cells, list_sheet_names
 

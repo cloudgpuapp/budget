@@ -4,7 +4,7 @@ name = "budget"
 version = "0.1.0"
 description = "Small budgeting utilities and CLI for personal finance."
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.11"
 authors = [
     { name = "Joshua Bone", email = "jbone.data@gmail.com" }
 ]

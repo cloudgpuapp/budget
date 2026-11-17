@@ -24,3 +24,4 @@ deprecated/
 build/
 deploy.sh
 scripts/
+.issues/

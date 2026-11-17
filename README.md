@@ -33,9 +33,12 @@ Create a `.env` file in the working directory (or export these variables in your
 GOOGLE_SERVICE_ACCOUNT_KEY=/absolute/path/to/service-account.json
 SPREADSHEET_ID=your_google_spreadsheet_id
 BUDGET_CONFIG=/absolute/path/to/config.toml
+BUDGET_OWNERS=Name1,Name2
 ```
 
 `SPREADSHEET_ID` is the ID in the spreadsheet URL between `/d/` and `/edit`. The CLI loads `.env` automatically. For the web app, run it from the project directory so the same `.env` file is found.
+
+`BUDGET_OWNERS` is optional. Set it to a comma-separated list of account owner name prefixes to enable owner plots (for example, `BUDGET_OWNERS=Name1,Name2`). When unset or empty, the app does not look for owner names or create owner plots. Accounts that do not start with a configured name are omitted from those plots.
 
 ## Usage
 
@@ -87,5 +90,6 @@ The dashboard has no authentication and displays financial data. Keep it on a tr
 | `BUDGET_FETCH_WORKERS` | Parallel sheet fetch workers for dashboard | `6` |
 | `BUDGET_RESULT_TIMEOUT` | Dashboard timeout per sheet future, in seconds | `20` |
 | `BUDGET_FETCH_TIMEOUT` | Sheets API request timeout, in seconds | `15` |
+| `BUDGET_OWNERS` | Optional comma-separated account owner prefixes for owner plots | unset |
 
 See [Security](docs/SECURITY.md) for credential and deployment guidance.

@@ -1,4 +1,5 @@
 import logging
+import os
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -97,13 +98,20 @@ def plot_accounts_on_ax(
     return ax
 
 
-def owner_from_account(account: str) -> str:
-    if account.startswith("Josh"):
-        return "Josh"
-    elif account.startswith("Tess"):
-        return "Tess"
-    else:
-        raise ValueError(f"Unknown account owner for account: {account}")
+def configured_owners() -> list[str]:
+    """Return owner prefixes configured in BUDGET_OWNERS, if any."""
+    return [
+        owner.strip()
+        for owner in os.environ.get("BUDGET_OWNERS", "").split(",")
+        if owner.strip()
+    ]
+
+
+def owner_from_account(account: str, owners: list[str] | None = None) -> str | None:
+    """Find the configured owner prefix for an account, or None if unmatched."""
+    owners = configured_owners() if owners is None else owners
+    matches = [owner for owner in owners if account.startswith(owner)]
+    return max(matches, key=len) if matches else None
 
 
 def plot_split_accounts(
@@ -111,36 +119,54 @@ def plot_split_accounts(
     start_date=None,
     end_date=None,
 ):
-    josh_cols = [c for c in pivot.columns if owner_from_account(c) == "Josh"]
-    tess_cols = [c for c in pivot.columns if owner_from_account(c) == "Tess"]
+    owners = configured_owners()
+    if not owners:
+        logger.info("Skipping owner plots; BUDGET_OWNERS is not configured")
+        return
 
-    fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+    owner_columns = {
+        owner: [c for c in pivot.columns if owner_from_account(c, owners) == owner]
+        for owner in owners
+    }
+    owners = [owner for owner in owners if owner_columns[owner]]
+    if not owners:
+        logger.info("Skipping owner plots; no accounts match BUDGET_OWNERS")
+        return
 
-    plot_accounts_on_ax(
-        pivot,
-        josh_cols,
-        axes[0],
-        "Josh Accounts",
-        start_date=start_date,
-        end_date=end_date,
+    fig, axes = plt.subplots(
+        len(owners), 1, figsize=(12, 4 * len(owners)), sharex=True
     )
-    plot_accounts_on_ax(
-        pivot,
-        tess_cols,
-        axes[1],
-        "Tess Accounts",
-        start_date=start_date,
-        end_date=end_date,
-    )
+    if len(owners) == 1:
+        axes = [axes]
 
-    axes[1].set_xlabel("Date")
+    for owner, ax in zip(owners, axes):
+        plot_accounts_on_ax(
+            pivot,
+            owner_columns[owner],
+            ax,
+            f"{owner} Accounts",
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    axes[-1].set_xlabel("Date")
 
     plt.tight_layout()
     plt.show()
 
 
 def plot_owner_accounts(pivot: pd.DataFrame, owner: str, **kwargs):
-    cols = [c for c in pivot.columns if owner_from_account(c) == owner]
+    owners = configured_owners()
+    if not owners:
+        logger.info("Skipping owner plot; BUDGET_OWNERS is not configured")
+        return
+    if owner not in owners:
+        raise ValueError(f"Owner {owner!r} is not configured in BUDGET_OWNERS")
+
+    cols = [c for c in pivot.columns if owner_from_account(c, owners) == owner]
+    if not cols:
+        logger.info("Skipping owner plot; no accounts match %r", owner)
+        return
 
     fig, ax = plt.subplots(figsize=(10, 6))
     plot_accounts_on_ax(pivot, cols, ax, f"{owner} Accounts", **kwargs)

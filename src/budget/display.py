@@ -133,9 +133,7 @@ def plot_split_accounts(
         logger.info("Skipping owner plots; no accounts match BUDGET_OWNERS")
         return
 
-    fig, axes = plt.subplots(
-        len(owners), 1, figsize=(12, 4 * len(owners)), sharex=True
-    )
+    fig, axes = plt.subplots(len(owners), 1, figsize=(12, 4 * len(owners)), sharex=True)
     if len(owners) == 1:
         axes = [axes]
 

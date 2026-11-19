@@ -60,8 +60,18 @@ def test_import_sheet_history_skips_incomplete_rows_and_last_duplicate_wins(tmp_
     db_path = tmp_path / "balances.sqlite"
     balances = pd.DataFrame(
         [
-            {"Date": "1/2/2026", "Account": "Checking", "Amount": 10, "Notes / Usage": ""},
-            {"Date": "1/2/2026", "Account": "Checking", "Amount": 15, "Notes / Usage": "updated"},
+            {
+                "Date": "1/2/2026",
+                "Account": "Checking",
+                "Amount": 10,
+                "Notes / Usage": "",
+            },
+            {
+                "Date": "1/2/2026",
+                "Account": "Checking",
+                "Amount": 15,
+                "Notes / Usage": "updated",
+            },
             {"Date": "1/2/2026", "Account": "Savings", "Amount": None},
             {"Date": "", "Account": "Checking", "Amount": 30},
             {"Date": "not a date", "Account": "Checking", "Amount": 30},

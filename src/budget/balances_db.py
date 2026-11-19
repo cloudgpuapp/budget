@@ -116,7 +116,9 @@ def import_balance_history(
         if pd.isna(parsed_date) or pd.isna(amount):
             skipped += 1
             continue
-        rows.append((str(account_value).strip(), parsed_date.date().isoformat(), amount))
+        rows.append(
+            (str(account_value).strip(), parsed_date.date().isoformat(), amount)
+        )
 
     connection = _connect(db_path)
     try:

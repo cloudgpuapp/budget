@@ -8,7 +8,13 @@ from budget.config import ConfigError, get_env, load_toml
 from budget.display import print_section
 from budget.simplefin import claim_setup_token, get_accounts
 from budget.balances_db import import_balance_history, insert_balance_snapshots
-from budget.sheets import Resource, build_service, fetch_cells, get_balances_df, list_sheet_names
+from budget.sheets import (
+    Resource,
+    build_service,
+    fetch_cells,
+    get_balances_df,
+    list_sheet_names,
+)
 from budget.retirement_forecast import (
     RetirementForecastConfig,
     get_current_retirement_savings_contributions,
@@ -125,7 +131,9 @@ def main():
         service: Resource = build_service(key_file)
         balances = get_balances_df(service, spreadsheet_id)
         imported, skipped = import_balance_history(balances)
-        logger.info("Balance import complete: %d imported, %d skipped.", imported, skipped)
+        logger.info(
+            "Balance import complete: %d imported, %d skipped.", imported, skipped
+        )
         return
 
     config = load_toml()
@@ -188,7 +196,9 @@ def main():
             )
             if all_refs:
                 logger.info(f"Fetching latest budget sheet '{latest_sheet}'...")
-                cell_values = fetch_cells(service, spreadsheet_id, latest_sheet, all_refs)
+                cell_values = fetch_cells(
+                    service, spreadsheet_id, latest_sheet, all_refs
+                )
                 latest_budget = build_budget(cells_config, cell_values, summary_config)
 
         account_patterns = (

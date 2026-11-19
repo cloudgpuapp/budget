@@ -5,7 +5,7 @@ A personal budgeting tool that reads monthly values from Google Sheets. It inclu
 ## Requirements
 
 - Python 3.11 or newer
-- A Google spreadsheet containing budget tabs and, for retirement forecasting, a `Balances` tab
+- A Google spreadsheet containing budget tabs; current account balances are stored as SQLite snapshots
 - A Google Cloud service account with the Google Sheets API enabled
 
 The service account needs viewer access to the spreadsheet. The app uses the Sheets API in read-only mode.
@@ -58,7 +58,7 @@ Run a retirement Monte Carlo forecast:
 budget retirement-forecast
 ```
 
-The forecast reads historical monthly returns and inflation from `data/input/sample_returns_inflation.csv`, obtains the current balance from the spreadsheet's `Balances` tab, and estimates contributions from the latest matching budget tab. The default CSV must have `date`, `nominal_return`, and `inflation` columns. Supply another CSV or override the resolved amounts as needed:
+The forecast reads historical monthly returns and inflation from `data/input/sample_returns_inflation.csv`, obtains the current balance from the latest SQLite snapshot, and estimates contributions from the latest matching budget tab. The default CSV must have `date`, `nominal_return`, and `inflation` columns. Supply another CSV or override the resolved amounts as needed:
 
 ```sh
 budget retirement-forecast --csv-path /path/to/returns.csv

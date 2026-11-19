@@ -66,7 +66,7 @@ def main():
     )
     forecast_parser.add_argument(
         "--account-patterns",
-        help="Comma-separated account name patterns to match in the Balances sheet.",
+        help="Comma-separated account name patterns to match in the latest SQLite balance snapshot.",
     )
     forecast_parser.add_argument(
         "--contribution-patterns",
@@ -205,8 +205,6 @@ def main():
             initial_balance=args.initial_balance
             if args.initial_balance is not None
             else get_total_retirement_savings_balance(
-                service=service,
-                spreadsheet_id=spreadsheet_id,
                 account_patterns=account_patterns,
             ),
             monthly_contribution=args.monthly_contribution

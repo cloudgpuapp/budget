@@ -16,7 +16,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from budget.sheets import Resource, get_balances_df
+from budget.balances_db import get_balance_history
 
 logger = logging.getLogger(__name__)
 
@@ -348,22 +348,25 @@ def _coerce_amount_series(series: pd.Series) -> pd.Series:
 
 def get_total_retirement_savings_balance(
     *,
-    service: Resource | None = None,
-    spreadsheet_id: str | None = None,
     balances_df: pd.DataFrame | None = None,
     account_patterns: Sequence[str] | None = None,
+    db_path: str | None = None,
 ) -> float:
     """
-    Resolve the current retirement balance from the Balances sheet.
+    Resolve the current retirement balance from the latest SQLite snapshot.
 
-    If the sheet data cannot be accessed, falls back to the notebook's current
-    hard-coded value so the forecast still runs.
+    ``balances_df`` is accepted as an explicit data override. If the database
+    has no snapshots, the notebook's current hard-coded value is used.
     """
     account_patterns = tuple(account_patterns or DEFAULT_BALANCE_PATTERNS)
 
-    if balances_df is None and service is not None and spreadsheet_id is not None:
-        logger.debug("Fetching balances from Google Sheets")
-        balances_df = get_balances_df(service, spreadsheet_id)
+    if balances_df is None:
+        logger.debug("Fetching balances from SQLite")
+        balances_df = get_balance_history(db_path=db_path)
+
+    if balances_df is not None and not balances_df.empty and "Date" in balances_df:
+        latest_date = balances_df["Date"].max()
+        balances_df = balances_df[balances_df["Date"] == latest_date]
 
     if balances_df is None or balances_df.empty:
         logger.debug(f"Returning default initial balance of {DEFAULT_INITIAL_BALANCE}")

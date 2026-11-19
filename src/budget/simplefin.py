@@ -11,7 +11,8 @@ import base64
 import binascii
 import logging
 import os
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
@@ -28,7 +29,9 @@ class SimpleFINError(Exception):
 
 def _request_error(action: str, exc: Exception) -> SimpleFINError:
     if isinstance(exc, requests.Timeout):
-        return SimpleFINError(f"SimpleFIN {action} request timed out")
+        return SimpleFINError(
+            f"SimpleFIN {action} request timed out.\nIf your VPN is on, turn it off and try again."
+        )
     if isinstance(exc, requests.HTTPError):
         return SimpleFINError(f"SimpleFIN {action} request returned an HTTP error")
     return SimpleFINError(f"SimpleFIN {action} request failed")
@@ -77,7 +80,9 @@ def get_accounts(
         parts = urlsplit(access_url)
         if parts.scheme not in ("http", "https") or not parts.hostname:
             raise ValueError("invalid access URL")
-        endpoint = urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip("/") + "/accounts", "", ""))
+        endpoint = urlunsplit(
+            (parts.scheme, parts.netloc, parts.path.rstrip("/") + "/accounts", "", "")
+        )
         response = requests.get(
             endpoint,
             params={"balances-only": 1},

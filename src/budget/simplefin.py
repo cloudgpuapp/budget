@@ -92,7 +92,7 @@ def get_accounts(
         payload = response.json()
         accounts = payload["accounts"]
         if not isinstance(accounts, list):
-            raise ValueError("accounts is not a list")
+            raise TypeError("accounts is not a list")
         normalized = []
         for account in accounts:
             account_id = account["id"]

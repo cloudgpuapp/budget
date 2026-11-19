@@ -69,10 +69,10 @@ def get_accounts(
     in config.toml. Unmapped accounts are warned about and skipped. ``account_names``
     can be supplied to override the config mapping.
     """
-    if account_names is None:
-        account_names = load_toml().get("simplefin", {}).get("accounts", {})
     if access_url is None:
         access_url = get_env("SIMPLEFIN_ACCESS_URL")
+    if account_names is None:
+        account_names = load_toml().get("simplefin", {}).get("accounts", {})
     try:
         parts = urlsplit(access_url)
         if parts.scheme not in ("http", "https") or not parts.hostname:

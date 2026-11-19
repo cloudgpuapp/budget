@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from budget.analyze import build_budget
 from budget.config import ConfigError, get_env, load_toml
 from budget.display import print_section
+from budget.simplefin import claim_setup_token, get_accounts
+from budget.balances_db import insert_balance_snapshots
 from budget.sheets import Resource, build_service, fetch_cells, list_sheet_names
 from budget.retirement_forecast import (
     RetirementForecastConfig,
@@ -36,6 +38,21 @@ def main():
     forecast_parser.add_argument(
         "--csv-path",
         help="Path to the historical returns/inflation CSV.",
+    )
+
+    claim_parser = subparsers.add_parser(
+        "simplefin-claim",
+        help="Claim a SimpleFIN setup token and print the access URL.",
+    )
+    claim_parser.add_argument("setup_token", help="One-time SimpleFIN setup token.")
+
+    subparsers.add_parser(
+        "simplefin",
+        help="Fetch and display current SimpleFIN account balances.",
+    )
+    subparsers.add_parser(
+        "snapshot",
+        help="Fetch current SimpleFIN balances and save a daily snapshot.",
     )
     forecast_parser.add_argument(
         "--initial-balance",
@@ -74,6 +91,28 @@ def main():
     logging.basicConfig(level=getattr(logging, args.log_level.upper()))
 
     load_dotenv()
+
+    if args.command == "simplefin-claim":
+        access_url = claim_setup_token(args.setup_token)
+        print("SimpleFIN access URL (store it securely as SIMPLEFIN_ACCESS_URL):")
+        print(access_url)
+        print("For example, add it to your private environment configuration.")
+        return
+
+    if args.command in ("simplefin", "snapshot"):
+        accounts = get_accounts()
+        if args.command == "snapshot":
+            insert_balance_snapshots(accounts)
+            print(f"Saved balance snapshot for {len(accounts)} account(s).")
+            return
+        if not accounts:
+            print("No mapped SimpleFIN accounts found.")
+            return
+        print(f"{'Account':<36} {'Balance':>14}")
+        for account in accounts:
+            print(f"{account['name']:<36} ${float(account['balance']):>13,.2f}")
+        return
+
     key_file = get_env("GOOGLE_SERVICE_ACCOUNT_KEY")
     spreadsheet_id = get_env("SPREADSHEET_ID")
 

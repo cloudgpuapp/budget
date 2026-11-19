@@ -1,4 +1,7 @@
 *.csv
+*.db
+*.sqlite
+*.sqlite3
 *.xsls
 *.xlsx
 data/

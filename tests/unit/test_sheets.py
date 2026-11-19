@@ -1,7 +1,7 @@
-from unittest.mock import MagicMock, patch
-
+import pandas as pd
 import pytest
-from budget.sheets import fetch_cells, list_sheet_names
+from unittest.mock import MagicMock, patch
+from budget.sheets import fetch_cells, get_balances_df, list_sheet_names
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -68,6 +68,24 @@ def test_list_sheet_names_passes_spreadsheet_id():
     service.spreadsheets.return_value.get.assert_called_once_with(
         spreadsheetId="my-spreadsheet-id"
     )
+
+
+def test_get_balances_df_pads_omitted_trailing_cells_and_coerces_blank_amounts():
+    service = MagicMock()
+    service.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+        "values": [
+            ["Date", "Account", "Amount", "Notes / Usage"],
+            ["1/2/2026", "Checking", "$1,234.56"],
+            ["1/3/2026", "Savings", ""],
+        ]
+    }
+
+    balances = get_balances_df(service, "spreadsheet-id")
+
+    assert balances.columns.tolist() == ["Date", "Account", "Amount", "Notes / Usage"]
+    assert balances.loc[0, "Amount"] == 1234.56
+    assert balances["Notes / Usage"].isna().all()
+    assert pd.isna(balances.loc[1, "Amount"])
 
 
 # ── fetch_cells ────────────────────────────────────────────────────────────────

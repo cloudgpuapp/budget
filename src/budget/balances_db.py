@@ -1,5 +1,6 @@
 """SQLite persistence for daily account balance snapshots."""
 
+import logging
 import os
 import sqlite3
 from datetime import date, datetime
@@ -7,6 +8,8 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def _database_path(db_path: str | os.PathLike[str] | None = None) -> str:
@@ -79,6 +82,60 @@ def insert_balance_snapshots(
         connection.commit()
     finally:
         connection.close()
+
+
+def import_balance_history(
+    balances: pd.DataFrame,
+    *,
+    db_path: str | os.PathLike[str] | None = None,
+) -> tuple[int, int]:
+    """Import sheet history, skipping incomplete or invalid rows.
+
+    Returns the number of valid rows written and the number skipped. Repeated
+    account/date pairs are processed in sheet order, so the final row wins.
+    """
+    rows = []
+    skipped = 0
+    for _, record in balances.iterrows():
+        date_value = record.get("Date")
+        account_value = record.get("Account")
+        amount_value = record.get("Amount")
+        is_blank = any(
+            pd.isna(value) or not str(value).strip()
+            for value in (date_value, account_value, amount_value)
+        )
+        if is_blank:
+            skipped += 1
+            continue
+
+        parsed_date = pd.to_datetime(date_value, errors="coerce")
+        try:
+            amount = float(str(amount_value).replace("$", "").replace(",", ""))
+        except (TypeError, ValueError):
+            amount = float("nan")
+        if pd.isna(parsed_date) or pd.isna(amount):
+            skipped += 1
+            continue
+        rows.append((str(account_value).strip(), parsed_date.date().isoformat(), amount))
+
+    connection = _connect(db_path)
+    try:
+        connection.executemany(
+            """INSERT INTO balance_snapshots (account, date, amount)
+               VALUES (?, ?, ?)
+               ON CONFLICT(account, date) DO UPDATE SET amount = excluded.amount""",
+            rows,
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    logger.info(
+        "Imported %d balance row(s); skipped %d incomplete or invalid row(s).",
+        len(rows),
+        skipped,
+    )
+    return len(rows), skipped
 
 
 def get_balance_history(

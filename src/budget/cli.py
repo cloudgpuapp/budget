@@ -7,8 +7,8 @@ from budget.analyze import build_budget
 from budget.config import ConfigError, get_env, load_toml
 from budget.display import print_section
 from budget.simplefin import claim_setup_token, get_accounts
-from budget.balances_db import insert_balance_snapshots
-from budget.sheets import Resource, build_service, fetch_cells, list_sheet_names
+from budget.balances_db import import_balance_history, insert_balance_snapshots
+from budget.sheets import Resource, build_service, fetch_cells, get_balances_df, list_sheet_names
 from budget.retirement_forecast import (
     RetirementForecastConfig,
     get_current_retirement_savings_contributions,
@@ -53,6 +53,10 @@ def main():
     subparsers.add_parser(
         "snapshot",
         help="Fetch current SimpleFIN balances and save a daily snapshot.",
+    )
+    subparsers.add_parser(
+        "import-balances",
+        help="Import historical balances from the Balances sheet into SQLite.",
     )
     forecast_parser.add_argument(
         "--initial-balance",
@@ -115,6 +119,14 @@ def main():
 
     key_file = get_env("GOOGLE_SERVICE_ACCOUNT_KEY")
     spreadsheet_id = get_env("SPREADSHEET_ID")
+
+    if args.command == "import-balances":
+        logger.info("Fetching balance history from Google Sheets...")
+        service: Resource = build_service(key_file)
+        balances = get_balances_df(service, spreadsheet_id)
+        imported, skipped = import_balance_history(balances)
+        logger.info("Balance import complete: %d imported, %d skipped.", imported, skipped)
+        return
 
     config = load_toml()
     cells_config = config.get("cells", {})

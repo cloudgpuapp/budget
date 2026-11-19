@@ -52,14 +52,28 @@ def get_balances_df(service: Resource, spreadsheet_id: str) -> pd.DataFrame:
     )
     values = response.get("values", [])
 
-    df = pd.DataFrame(values[1:], columns=values[0])
+    if not values:
+        return pd.DataFrame()
+
+    columns = values[0]
+    # The Sheets API omits trailing empty cells, so rows with an empty
+    # Notes / Usage cell can be shorter than the header row.
+    rows = [
+        list(row[: len(columns)]) + [None] * max(0, len(columns) - len(row))
+        for row in values[1:]
+    ]
+    df = pd.DataFrame(rows, columns=columns)
 
     # Convert Amount to numeric
     if "Amount" in df.columns:
         if is_string_dtype(df["Amount"]):
-            df["Amount"] = (
-                df["Amount"].str.replace("$", "").str.replace(",", "").astype(float)
-            )  # Assumes currency format like "$1,234.56"
+            amount_text = (
+                df["Amount"]
+                .astype("string")
+                .str.replace("$", "", regex=False)
+                .str.replace(",", "", regex=False)
+            )
+            df["Amount"] = pd.to_numeric(amount_text, errors="coerce")
 
     return df
 

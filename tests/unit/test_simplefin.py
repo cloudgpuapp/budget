@@ -6,6 +6,12 @@ import pytest
 from budget.simplefin import SimpleFINError, claim_setup_token, get_accounts
 
 
+@pytest.fixture(autouse=True)
+def simplefin_config():
+    with patch("budget.simplefin.load_toml", return_value={"simplefin": {"accounts": {}}}):
+        yield
+
+
 def response(*, text="", payload=None):
     result = Mock()
     result.text = text
@@ -25,8 +31,8 @@ def test_claim_setup_token_posts_decoded_claim_url():
 def test_get_accounts_returns_balance_fields():
     payload = {"accounts": [{"id": "a1", "name": "Savings", "balance": "12.34", "balance-date": 1234}]}
     with patch("budget.simplefin.requests.get", return_value=response(payload=payload)) as get:
-        result = get_accounts("https://user:secret@bridge.example/api")
-    assert result == [{"id": "a1", "name": "Savings", "balance": "12.34", "balance_timestamp": 1234}]
+        result = get_accounts("https://user:secret@bridge.example/api", {"a1": "Josh's Schwab Savings"})
+    assert result == [{"id": "a1", "name": "Josh's Schwab Savings", "balance": "12.34", "balance_timestamp": 1234}]
     assert get.call_args.args == ("https://user:secret@bridge.example/api/accounts",)
     assert get.call_args.kwargs["params"] == {"balances-only": 1}
 
@@ -34,6 +40,13 @@ def test_get_accounts_returns_balance_fields():
 def test_get_accounts_returns_empty_list():
     with patch("budget.simplefin.requests.get", return_value=response(payload={"accounts": []})):
         assert get_accounts("https://user:secret@bridge.example/api") == []
+
+
+def test_get_accounts_warns_and_skips_unmapped_accounts(caplog):
+    payload = {"accounts": [{"id": "a1", "name": "Institution Name", "balance": "12.34"}]}
+    with patch("budget.simplefin.requests.get", return_value=response(payload=payload)):
+        assert get_accounts("https://user:secret@bridge.example/api", {}) == []
+    assert "unmapped SimpleFIN account id a1" in caplog.text
 
 
 @pytest.mark.parametrize("operation", ["claim", "accounts"])
@@ -79,5 +92,5 @@ def test_access_url_is_loaded_from_environment():
     with patch("budget.simplefin.get_env", return_value="https://user:secret@bridge.example/api") as get_env, patch(
         "budget.simplefin.requests.get", return_value=response(payload={"accounts": []})
     ):
-        assert get_accounts() == []
+        assert get_accounts(account_names={}) == []
     get_env.assert_called_once_with("SIMPLEFIN_ACCESS_URL")

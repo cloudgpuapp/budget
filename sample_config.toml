@@ -1,5 +1,10 @@
 [spreadsheet]
 sheet = "Budget"  # The tab name to read from
+
+[simplefin.accounts]
+# Map each SimpleFIN account id to the display name used by the budget app.
+# Find ids in the SimpleFIN account response or with your account inspection tool.
+"replace-with-simplefin-account-id" = "Josh's Schwab Savings"
  
 # Define the cells you care about as label = "CellRef"
 # You can organize them into any sections you like.

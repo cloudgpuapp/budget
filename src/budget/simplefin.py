@@ -9,15 +9,17 @@ https://beta-bridge.simplefin.org/info/developers#limits.
 
 import base64
 import binascii
+import logging
 import os
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
-from budget.config import get_env
+from budget.config import get_env, load_toml
 
 _FETCH_TIMEOUT = int(os.environ.get("BUDGET_FETCH_TIMEOUT", 15))
+logger = logging.getLogger(__name__)
 
 
 class SimpleFINError(Exception):
@@ -56,11 +58,19 @@ def claim_setup_token(setup_token: str) -> str:
         raise _request_error("claim", exc) from None
 
 
-def get_accounts(access_url: str | None = None) -> list[dict[str, Any]]:
+def get_accounts(
+    access_url: str | None = None,
+    account_names: Mapping[str, str] | None = None,
+) -> list[dict[str, Any]]:
     """Fetch account ids, names, balances, and balance timestamps.
 
     If ``access_url`` is omitted, it is read from ``SIMPLEFIN_ACCESS_URL``.
+    Account ids are translated to app display names using ``[simplefin.accounts]``
+    in config.toml. Unmapped accounts are warned about and skipped. ``account_names``
+    can be supplied to override the config mapping.
     """
+    if account_names is None:
+        account_names = load_toml().get("simplefin", {}).get("accounts", {})
     if access_url is None:
         access_url = get_env("SIMPLEFIN_ACCESS_URL")
     try:
@@ -78,15 +88,22 @@ def get_accounts(access_url: str | None = None) -> list[dict[str, Any]]:
         accounts = payload["accounts"]
         if not isinstance(accounts, list):
             raise ValueError("accounts is not a list")
-        return [
-            {
-                "id": account["id"],
-                "name": account["name"],
-                "balance": account["balance"],
-                "balance_timestamp": account.get("balance-date"),
-            }
-            for account in accounts
-        ]
+        normalized = []
+        for account in accounts:
+            account_id = account["id"]
+            display_name = account_names.get(account_id)
+            if display_name is None:
+                logger.warning("Skipping unmapped SimpleFIN account id %s", account_id)
+                continue
+            normalized.append(
+                {
+                    "id": account_id,
+                    "name": display_name,
+                    "balance": account["balance"],
+                    "balance_timestamp": account.get("balance-date"),
+                }
+            )
+        return normalized
     except requests.exceptions.JSONDecodeError:
         raise SimpleFINError("SimpleFIN returned malformed account data") from None
     except requests.RequestException as exc:

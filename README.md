@@ -6,6 +6,7 @@ A personal budgeting tool that reads monthly values from Google Sheets. It inclu
 
 - Python 3.11 or newer
 - A Google spreadsheet containing budget tabs; current account balances are stored as SQLite snapshots
+- SimpleFIN account connections can be used to save transactions in SQLite
 - A Google Cloud service account with the Google Sheets API enabled
 
 The service account needs viewer access to the spreadsheet. The app uses the Sheets API in read-only mode.
@@ -63,6 +64,12 @@ The forecast reads historical monthly returns and inflation from `data/input/sam
 ```sh
 budget retirement-forecast --csv-path /path/to/returns.csv
 budget retirement-forecast --initial-balance 150000 --monthly-contribution 1200
+```
+
+Fetch and save the most recent 90 days of SimpleFIN transactions with `budget transactions`. The range can be changed with inclusive `--start-date` and exclusive `--end-date` dates (SimpleFIN limits a request to 90 days):
+
+```sh
+budget transactions --start-date 2026-01-01 --end-date 2026-04-01
 ```
 
 Account and contribution matching defaults are `hsa,401k,roth,savings` and `hsa,401k,roth` respectively. Change them with `--account-patterns`, `--contribution-patterns`, `--contribution-fields`, or `--summary-keys` (comma-separated). If values cannot be resolved, the forecast currently falls back to built-in sample amounts; review the output before relying on it.

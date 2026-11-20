@@ -3,7 +3,7 @@
 import logging
 import os
 import sqlite3
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -29,6 +29,7 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
         path = os.path.expanduser(path)
     connection = sqlite3.connect(path, timeout=30)
     connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA foreign_keys=ON")
     connection.execute("""
         CREATE TABLE IF NOT EXISTS balance_snapshots (
             account TEXT NOT NULL,
@@ -44,13 +45,31 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
             request_count INTEGER NOT NULL
         )
     """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS accounts (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL
+        )
+    """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS transactions (
+            account_id TEXT NOT NULL REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE CASCADE,
+            transaction_id TEXT NOT NULL,
+            posted_date TEXT,
+            amount REAL NOT NULL,
+            description TEXT NOT NULL,
+            pending INTEGER NOT NULL DEFAULT 0,
+            transacted_at TEXT,
+            PRIMARY KEY (account_id, transaction_id)
+        )
+    """)
     columns = {row[1] for row in connection.execute("PRAGMA table_info(balance_snapshots)")}
     if "source" not in columns:
         # Existing rows came from the manually maintained Balances sheet.
         connection.execute(
             "ALTER TABLE balance_snapshots ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
         )
-    connection.execute("PRAGMA user_version = 2")
+    connection.execute("PRAGMA user_version = 3")
     return connection
 
 
@@ -196,3 +215,72 @@ def get_balance_history(
     finally:
         connection.close()
     return pd.DataFrame(rows, columns=["Date", "Account", "Amount", "Source"])
+
+
+def insert_simplefin_transactions(
+    accounts: Iterable[Mapping[str, Any]],
+    *,
+    db_path: str | os.PathLike[str] | None = None,
+) -> int:
+    """Upsert mapped SimpleFIN accounts and their transactions; return rows written."""
+    account_rows = []
+    transaction_rows = []
+    for account in accounts:
+        account_id = account.get("id")
+        account_name = account.get("name")
+        if account_id is None or account_name is None:
+            raise ValueError("Each account must include an id and name")
+        account_rows.append((str(account_id), str(account_name)))
+        for transaction in account.get("transactions", []):
+            transaction_id = transaction.get("id")
+            description = transaction.get("description")
+            posted = transaction.get("posted")
+            amount = transaction.get("amount")
+            if transaction_id is None or description is None or posted is None or amount is None:
+                raise ValueError("Each transaction must include id, posted, amount, and description")
+            posted_date = None if int(posted) == 0 else datetime.fromtimestamp(int(posted), UTC).date().isoformat()
+            transacted = transaction.get("transacted_at")
+            transacted_date = None if transacted in (None, 0) else datetime.fromtimestamp(int(transacted), UTC).date().isoformat()
+            transaction_rows.append((
+                str(account_id), str(transaction_id), posted_date, float(amount),
+                str(description), int(bool(transaction.get("pending", False))), transacted_date,
+            ))
+
+    connection = _connect(db_path)
+    try:
+        connection.executemany(
+            """INSERT INTO accounts (id, name) VALUES (?, ?)
+               ON CONFLICT(id) DO UPDATE SET name = excluded.name""",
+            account_rows,
+        )
+        connection.executemany(
+            """INSERT INTO transactions
+               (account_id, transaction_id, posted_date, amount, description, pending, transacted_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(account_id, transaction_id) DO UPDATE SET
+                 posted_date=excluded.posted_date, amount=excluded.amount,
+                 description=excluded.description, pending=excluded.pending,
+                 transacted_at=excluded.transacted_at""",
+            transaction_rows,
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    return len(transaction_rows)
+
+
+def get_transactions(*, db_path: str | os.PathLike[str] | None = None) -> pd.DataFrame:
+    """Return saved transactions with their mapped account names."""
+    connection = _connect(db_path)
+    try:
+        rows = connection.execute(
+            """SELECT t.posted_date, a.name, t.amount, t.description, t.pending,
+                      t.transaction_id, t.transacted_at
+               FROM transactions t JOIN accounts a ON a.id = t.account_id
+               ORDER BY t.posted_date, a.name, t.transaction_id"""
+        ).fetchall()
+    finally:
+        connection.close()
+    return pd.DataFrame(rows, columns=[
+        "Date", "Account", "Amount", "Description", "Pending", "Transaction ID", "Transacted At"
+    ])

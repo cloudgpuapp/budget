@@ -13,7 +13,7 @@ import logging
 import os
 import re
 from collections.abc import Mapping
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -152,3 +152,80 @@ def get_accounts(
     except (ValueError, KeyError, TypeError, AttributeError):
         # requests' JSONDecodeError may retain the response URL, so don't chain it.
         raise SimpleFINError("SimpleFIN returned malformed account data") from None
+
+
+def get_transactions(
+    access_url: str | None = None,
+    account_names: Mapping[str, str] | None = None,
+    *,
+    start_date: date | str | None = None,
+    end_date: date | str | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch mapped accounts and transactions in a SimpleFIN date window.
+
+    The end date is exclusive as required by SimpleFIN. The default window is
+    the 90 days ending tomorrow, so it stays within Bridge's per-request limit.
+    """
+    if access_url is None:
+        access_url = get_env("SIMPLEFIN_ACCESS_URL")
+    if account_names is None:
+        account_names = load_toml().get("simplefin", {}).get("accounts", {})
+    try:
+        today = date.today()
+        end = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
+        start = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+        end = end or today + timedelta(days=1)
+        start = start or end - timedelta(days=90)
+        if start >= end or (end - start).days > 90:
+            raise ValueError("invalid date window")
+        params = {
+            "start-date": int(datetime.combine(start, time.min, UTC).timestamp()),
+            "end-date": int(datetime.combine(end, time.min, UTC).timestamp()),
+        }
+        parts = urlsplit(access_url)
+        if parts.scheme != "https" or not parts.hostname:
+            raise ValueError("invalid access URL")
+        if not reserve_simplefin_request(limit=24):
+            raise SimpleFINError("SimpleFIN daily request limit reached (24 requests)")
+        endpoint = urlunsplit(
+            (parts.scheme, parts.netloc, parts.path.rstrip("/") + "/accounts", "", "")
+        )
+        response = requests.get(endpoint, params=params, timeout=_FETCH_TIMEOUT, allow_redirects=False)
+        response.raise_for_status()
+        payload = response.json()
+        accounts = payload["accounts"]
+        if not isinstance(accounts, list):
+            raise TypeError("accounts is not a list")
+        errors = payload.get("errlist", [])
+        if errors:
+            safe_errors = [
+                re.sub(r"https?://\S+", "[redacted URL]", str(error)).replace(
+                    access_url, "[redacted]"
+                )
+                for error in errors
+            ]
+            raise SimpleFINError(
+                "SimpleFIN reported account errors: " + "; ".join(safe_errors)
+            )
+        normalized = []
+        for account in accounts:
+            account_id = account["id"]
+            display_name = account_names.get(account_id)
+            if display_name is None:
+                logger.warning("Skipping unmapped SimpleFIN account id %s", account_id)
+                continue
+            transactions = account.get("transactions", [])
+            if not isinstance(transactions, list):
+                raise TypeError("transactions is not a list")
+            normalized.append(
+                {"id": account_id, "name": display_name, "transactions": transactions}
+            )
+        return normalized
+    except SimpleFINError:
+        raise
+    except requests.exceptions.JSONDecodeError:
+        raise SimpleFINError("SimpleFIN returned malformed transaction data") from None
+    except requests.RequestException as exc:
+        raise _request_error("transactions", exc) from None
+    except (ValueError, KeyError, TypeError, AttributeError, OverflowError, OSError):
+        raise SimpleFINError("SimpleFIN returned malformed transaction data or date range") from None

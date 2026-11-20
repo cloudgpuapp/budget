@@ -6,8 +6,12 @@ from dotenv import load_dotenv
 from budget.analyze import build_budget
 from budget.config import ConfigError, get_env, load_toml
 from budget.display import print_section
-from budget.simplefin import claim_setup_token, get_accounts
-from budget.balances_db import import_balance_history, insert_balance_snapshots
+from budget.simplefin import claim_setup_token, get_accounts, get_transactions
+from budget.balances_db import (
+    import_balance_history,
+    insert_balance_snapshots,
+    insert_simplefin_transactions,
+)
 from budget.sheets import (
     Resource,
     build_service,
@@ -56,6 +60,13 @@ def main():
         "simplefin",
         help="Fetch and display current SimpleFIN account balances.",
     )
+    transactions_parser = subparsers.add_parser(
+        "transactions",
+        help="Fetch and save recent SimpleFIN transactions.",
+    )
+    transactions_parser.add_argument("--start-date", help="Inclusive start date (YYYY-MM-DD).")
+    transactions_parser.add_argument("--end-date", help="Exclusive end date (YYYY-MM-DD).")
+
     subparsers.add_parser(
         "snapshot",
         help="Fetch current SimpleFIN balances and save a daily snapshot.",
@@ -121,6 +132,12 @@ def main():
         print(f"{'Account':<36} {'Balance':>14}")
         for account in accounts:
             print(f"{account['name']:<36} ${float(account['balance']):>13,.2f}")
+        return
+
+    if args.command == "transactions":
+        accounts = get_transactions(start_date=args.start_date, end_date=args.end_date)
+        count = insert_simplefin_transactions(accounts)
+        print(f"Saved {count} transaction(s) across {len(accounts)} mapped account(s).")
         return
 
     key_file = get_env("GOOGLE_SERVICE_ACCOUNT_KEY")

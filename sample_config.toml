@@ -1,5 +1,5 @@
 [spreadsheet]
-sheet = "Budget"  # The tab name to read from
+sheet_pattern = "^\\d{1,2}/\\d{4}$"  # matches "3/2026", "12/2025", etc.
 
 [simplefin.accounts]
 # Map each SimpleFIN account id to the display name used by the budget app.
@@ -19,8 +19,18 @@ rent = "C7"
 groceries = "C10"
 utilities = "C11"
 transport = "C12"
- 
-[cells.summary]
-total_income = "F3"
-total_expenses = "F20"
-balance = "F22"
+
+[summary.gross_income]
+section = "income"
+label   = "gross_income"
+
+[summary.net_income]
+section = "income"
+label   = "net_income"
+
+[summary.total_expenses]
+section  = "expenses"
+label    = "total_expenses"
+
+[summary.disposable]
+derived = "net_income - total_expenses"

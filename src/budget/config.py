@@ -1,8 +1,7 @@
 import os
+import tomllib
 from pathlib import Path
 from typing import Any
-
-import tomllib
 
 DEFAULT_LOCALE = "en_US.UTF-8"
 
@@ -28,4 +27,5 @@ def load_toml() -> dict[str, Any]:
     if not config_path.exists():
         raise FileNotFoundError(f"Error: config file not found at {config_path}")
     with open(config_path, "rb") as f:
-        return tomllib.load(f)
+        res: dict = tomllib.load(f)
+        return res

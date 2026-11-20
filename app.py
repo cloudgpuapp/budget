@@ -2,9 +2,9 @@
 app.py — Flask web interface for the budget reader.
 
 Routes:
-    GET /                       Cross-month summary (trends)
-    GET /month/<sheet_name>     Single-month detail view
-    POST /refresh               Invalidate cache and reload
+    GET /                       SQLite transaction summary (monthly trends)
+    GET /month/<sheet_name>     Legacy Google Sheets month detail view
+    POST /refresh               Legacy redirect to balances
 
 Run:
     flask --app app run --debug
@@ -16,7 +16,6 @@ import os
 import secrets
 import sqlite3
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, unquote
 
 from dotenv import load_dotenv
@@ -25,7 +24,6 @@ from flask import Flask, flash, redirect, render_template, request, url_for
 from budget.analyze import build_budget
 from budget.balances_db import _connect, get_balance_history, get_transactions
 from budget.categorizer import recategorize_all
-from budget.cache import budget_cache
 from budget.config import ConfigError, get_env, load_toml
 from budget.sheets import build_service, fetch_cells, list_sheet_names
 
@@ -37,14 +35,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app.jinja_env.filters["urlencode"] = quote
-
-# Max parallel Sheets API requests. The API is I/O-bound so this is safe to
-# tune upward, but 6 is plenty for ~12 month tabs without hammering the quota.
-_MAX_WORKERS = int(os.environ.get("BUDGET_FETCH_WORKERS", 6))
-_RESULT_TIMEOUT = int(
-    os.environ.get("BUDGET_RESULT_TIMEOUT", 20)
-)  # how long to wait on future.result()
-
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -58,13 +48,8 @@ def _sort_key(sheet_name: str):
         return (0, 0)
 
 
-def _cache_ttl() -> int:
-    try:
-        return int(os.environ.get("BUDGET_CACHE_TTL", 300))
-    except ValueError:
-        return 300
-
-
+# The functions below are retained for the CLI and the legacy month-detail
+# route. The Budget Overview route intentionally does not call them.
 def _fetch_one(
     service,
     spreadsheet_id: str,
@@ -81,10 +66,10 @@ def _fetch_one(
 
 
 def load_all_months() -> dict[str, dict]:
-    """
-    Fetch budget data for every matching sheet tab in parallel.
-    Returns dict keyed by sheet name, sorted oldest -> newest.
-    """
+    """Legacy Sheets loader retained for month detail and other callers."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from budget.cache import budget_cache
+
     cached = budget_cache.get()
     if cached is not None:
         return cached
@@ -175,26 +160,51 @@ def build_trends(all_months: dict[str, dict]) -> dict:
     }
 
 
+def load_sqlite_monthly_trends() -> dict:
+    """Aggregate posted SQLite transactions into calendar-month totals."""
+    connection = _connect()
+    try:
+        rows = connection.execute(
+            """SELECT substr(COALESCE(posted_date, transacted_at), 1, 7) AS month,
+                      SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END) AS income,
+                      SUM(CASE WHEN amount < 0 THEN -amount ELSE 0 END) AS expenses
+               FROM transactions
+               WHERE COALESCE(posted_date, transacted_at) IS NOT NULL
+                 AND pending = 0
+               GROUP BY month ORDER BY month"""
+        ).fetchall()
+    finally:
+        connection.close()
+    months = [row[0] for row in rows]
+    income = [float(row[1] or 0) for row in rows]
+    expenses = [float(row[2] or 0) for row in rows]
+    return {
+        "months": months,
+        "income": income,
+        "expenses": expenses,
+        "diff": [i - e for i, e in zip(income, expenses)],
+        "total_income": sum(income),
+        "total_expenses": sum(expenses),
+        "avg_income": sum(income) / len(months) if months else 0,
+        "avg_expenses": sum(expenses) / len(months) if months else 0,
+    }
+
+
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 
 @app.route("/")
 def index():
-    error = all_months = trends = fetched_at = None
+    error = trends = None
     try:
-        all_months = load_all_months()
-        trends = build_trends(all_months)
-        fetched_at = budget_cache.fetched_at
+        trends = load_sqlite_monthly_trends()
     except Exception as e:
-        logger.exception("Failed to load budget")
+        logger.exception("Failed to load transaction summary from SQLite")
         error = str(e)
 
     return render_template(
         "index.html",
         trends=trends,
-        all_months=all_months,
-        fetched_at=fetched_at,
-        cache_ttl=_cache_ttl(),
         error=error,
     )
 
@@ -219,7 +229,6 @@ def month_detail(sheet_name: str):
         sheet_name=sheet_name,
         budget=budget,
         months=months,
-        cache_ttl=_cache_ttl(),
         error=error,
     )
 

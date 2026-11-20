@@ -1,6 +1,6 @@
 # Budget
 
-A personal budgeting tool that reads monthly values from Google Sheets. It includes a command line report, a Flask dashboard, and a retirement forecast.
+A personal budgeting tool with a SQLite-backed transaction dashboard, a legacy Google Sheets command line report, and a retirement forecast.
 
 ## Requirements
 
@@ -82,7 +82,7 @@ Start the Flask development server from the repository root:
 flask --app app run
 ```
 
-Open <http://127.0.0.1:5000>. The home page summarizes trends across the matching tabs; select a month for its details. The **Refresh** action clears the in-process cache and fetches data again. Data is otherwise cached for five minutes by default. For local development, use `flask --app app run --debug`.
+Open <http://127.0.0.1:5000>. The Budget Overview aggregates dated, non-pending transactions from SQLite by calendar month. Positive amounts count as income and negative amounts as expenses; monthly remaining is income minus expenses. Months link to their transactions. The overview does not read Google Sheets, the Sheets cache, or the Sheets configuration. The legacy `/month/<sheet_name>` detail route and `budget sheets` CLI command still use Sheets. See [Budget Overview data source](docs/BUDGET_OVERVIEW.md) for the transition and preserved legacy paths. For local development, use `flask --app app run --debug`.
 
 The dashboard has no authentication and displays financial data. Keep it on a trusted machine or network; do not expose the development server directly to the public internet. For a production deployment, use a production WSGI server such as Gunicorn behind an appropriately secured web server.
 
@@ -93,9 +93,9 @@ The dashboard has no authentication and displays financial data. Keep it on a tr
 | `GOOGLE_SERVICE_ACCOUNT_KEY` | Path to service account JSON key | Required |
 | `SPREADSHEET_ID` | Google spreadsheet ID | Required |
 | `BUDGET_CONFIG` | Path to TOML cell mapping | Required |
-| `BUDGET_CACHE_TTL` | Dashboard cache lifetime in seconds | `300` |
-| `BUDGET_FETCH_WORKERS` | Parallel sheet fetch workers for dashboard | `6` |
-| `BUDGET_RESULT_TIMEOUT` | Dashboard timeout per sheet future, in seconds | `20` |
+| `BUDGET_CACHE_TTL` | Legacy Sheets dashboard cache lifetime | `300` |
+| `BUDGET_FETCH_WORKERS` | Legacy Sheets dashboard parallel fetch workers | `6` |
+| `BUDGET_RESULT_TIMEOUT` | Legacy Sheets dashboard timeout per sheet future | `20` |
 | `BUDGET_FETCH_TIMEOUT` | Sheets API request timeout, in seconds | `15` |
 | `BUDGET_OWNERS` | Optional comma-separated account owner prefixes for owner plots | unset |
 

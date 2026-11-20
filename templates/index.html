@@ -196,9 +196,6 @@
       <a class="mono-link" href="/balances">Balances &amp; net worth →</a>
       <a class="mono-link" href="/transactions">Transactions →</a>
       <a class="mono-link" href="/rules">Categories &amp; rules →</a>
-      {% if fetched_at %}
-      <span class="cache-note">cached · expires in {{ cache_ttl }}s</span>
-      {% endif %}
     </div>
   </header>
 
@@ -258,7 +255,7 @@
         {% set exp = trends.expenses[i] %}
         {% set d   = trends.diff[i] %}
         <tr>
-          <td><a href="/month/{{ m | urlencode }}">{{ m }}</a></td>
+          <td><a href="/transactions?month={{ m | urlencode }}">{{ m }}</a></td>
           <td>{% if inc is not none %}${{ "%.2f"|format(inc) }}{% else %}<span class="empty">—</span>{% endif %}</td>
           <td>{% if exp is not none %}${{ "%.2f"|format(exp) }}{% else %}<span class="empty">—</span>{% endif %}</td>
           <td class="{% if d is not none %}{% if d >= 0 %}positive{% else %}negative{% endif %}{% endif %}">
@@ -282,7 +279,7 @@
   {% endif %}
 
   <footer>
-    Data pulled live from Google Sheets &nbsp;·&nbsp; Cache TTL: {{ cache_ttl }}s
+    Monthly totals from SQLite transactions. Pending transactions are excluded.
   </footer>
 
 </div>

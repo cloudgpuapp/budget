@@ -20,6 +20,7 @@ from dotenv import load_dotenv
 from flask import Flask, redirect, render_template, url_for
 
 from budget.analyze import build_budget
+from budget.balances_db import get_balance_history
 from budget.cache import budget_cache
 from budget.config import ConfigError, get_env, load_toml
 from budget.sheets import build_service, fetch_cells, list_sheet_names
@@ -220,8 +221,59 @@ def month_detail(sheet_name: str):
 
 @app.route("/refresh", methods=["POST"])
 def refresh():
-    budget_cache.invalidate()
-    return redirect(url_for("index"))
+    # Balance pages read SQLite directly; rendering the destination reloads it.
+    return redirect(url_for("balances"))
+
+
+@app.route("/balances")
+def balances():
+    """Show current per-account balances and the SQLite net worth history."""
+    error = None
+    accounts = []
+    trend = []
+    net_worth = None
+    latest_date = None
+    try:
+        history = get_balance_history()
+        if not history.empty:
+            history["Date"] = history["Date"].astype(str)
+            latest_date = history["Date"].max()
+
+            for account, rows in history.groupby("Account", sort=True):
+                latest = rows.sort_values("Date").iloc[-1]
+                accounts.append({
+                    "name": account,
+                    "amount": float(latest["Amount"]),
+                    "date": latest["Date"],
+                    "stale": latest["Date"] != latest_date,
+                })
+
+            trend = []
+            dates = sorted(history["Date"].unique())
+            account_histories = {
+                account: rows.sort_values("Date")
+                for account, rows in history.groupby("Account", sort=True)
+            }
+            for day in dates:
+                total = 0.0
+                for rows in account_histories.values():
+                    available = rows[rows["Date"] <= day]
+                    if not available.empty:
+                        total += float(available.iloc[-1]["Amount"])
+                trend.append({"date": day, "amount": total})
+            net_worth = sum(account["amount"] for account in accounts)
+    except Exception as e:
+        logger.exception("Failed to load balances from SQLite")
+        error = str(e)
+
+    return render_template(
+        "balances.html",
+        accounts=accounts,
+        trend=trend,
+        net_worth=net_worth,
+        latest_date=latest_date,
+        error=error,
+    )
 
 
 if __name__ == "__main__":

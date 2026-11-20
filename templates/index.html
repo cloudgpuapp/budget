@@ -193,9 +193,7 @@
     <p class="eyebrow">Personal Finance</p>
     <h1>Budget Overview</h1>
     <div class="header-actions">
-      <form action="/refresh" method="post" style="display:inline">
-        <button class="mono-link" type="submit">↻ Refresh data</button>
-      </form>
+      <a class="mono-link" href="/balances">Balances &amp; net worth →</a>
       {% if fetched_at %}
       <span class="cache-note">cached · expires in {{ cache_ttl }}s</span>
       {% endif %}

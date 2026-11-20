@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, unquote
 
 from dotenv import load_dotenv
-from flask import Flask, redirect, render_template, url_for
+from flask import Flask, redirect, render_template, request, url_for
 
 from budget.analyze import build_budget
 from budget.balances_db import get_balance_history
@@ -228,6 +228,9 @@ def refresh():
 @app.route("/balances")
 def balances():
     """Show current per-account balances and the SQLite net worth history."""
+    source_filter = request.args.get("source", "all").lower()
+    if source_filter not in {"all", "manual", "simplefin"}:
+        source_filter = "all"
     error = None
     accounts = []
     trend = []
@@ -235,6 +238,8 @@ def balances():
     latest_date = None
     try:
         history = get_balance_history()
+        if "Source" in history.columns and source_filter != "all":
+            history = history[history["Source"] == source_filter]
         if not history.empty:
             history["Date"] = history["Date"].astype(str)
             latest_date = history["Date"].max()
@@ -272,6 +277,7 @@ def balances():
         trend=trend,
         net_worth=net_worth,
         latest_date=latest_date,
+        source_filter=source_filter,
         error=error,
     )
 

@@ -34,10 +34,17 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
             account TEXT NOT NULL,
             date TEXT NOT NULL,
             amount REAL NOT NULL,
+            source TEXT NOT NULL DEFAULT 'manual',
             PRIMARY KEY (account, date)
         )
     """)
-    connection.execute("PRAGMA user_version = 1")
+    columns = {row[1] for row in connection.execute("PRAGMA table_info(balance_snapshots)")}
+    if "source" not in columns:
+        # Existing rows came from the manually maintained Balances sheet.
+        connection.execute(
+            "ALTER TABLE balance_snapshots ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
+        )
+    connection.execute("PRAGMA user_version = 2")
     return connection
 
 
@@ -53,6 +60,7 @@ def insert_balance_snapshots(
     snapshots: Iterable[Mapping[str, Any]],
     snapshot_date: date | datetime | str | None = None,
     *,
+    source: str = "manual",
     db_path: str | os.PathLike[str] | None = None,
 ) -> None:
     """Insert or replace snapshots for a date.
@@ -69,14 +77,15 @@ def insert_balance_snapshots(
         row_date = snapshot.get("Date", snapshot.get("date", default_date))
         if account is None or amount is None:
             raise ValueError("Each snapshot must include an account and amount")
-        rows.append((str(account), _as_date(row_date), float(amount)))
+        rows.append((str(account), _as_date(row_date), float(amount), source))
 
     connection = _connect(db_path)
     try:
         connection.executemany(
-            """INSERT INTO balance_snapshots (account, date, amount)
-               VALUES (?, ?, ?)
-               ON CONFLICT(account, date) DO UPDATE SET amount = excluded.amount""",
+            """INSERT INTO balance_snapshots (account, date, amount, source)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(account, date) DO UPDATE SET
+                   amount = excluded.amount, source = excluded.source""",
             rows,
         )
         connection.commit()
@@ -117,15 +126,16 @@ def import_balance_history(
             skipped += 1
             continue
         rows.append(
-            (str(account_value).strip(), parsed_date.date().isoformat(), amount)
+            (str(account_value).strip(), parsed_date.date().isoformat(), amount, "manual")
         )
 
     connection = _connect(db_path)
     try:
         connection.executemany(
-            """INSERT INTO balance_snapshots (account, date, amount)
-               VALUES (?, ?, ?)
-               ON CONFLICT(account, date) DO UPDATE SET amount = excluded.amount""",
+            """INSERT INTO balance_snapshots (account, date, amount, source)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(account, date) DO UPDATE SET
+                   amount = excluded.amount, source = excluded.source""",
             rows,
         )
         connection.commit()
@@ -143,12 +153,12 @@ def import_balance_history(
 def get_balance_history(
     *, db_path: str | os.PathLike[str] | None = None
 ) -> pd.DataFrame:
-    """Return history as Date, Account, Amount columns, ordered by date."""
+    """Return history as Date, Account, Amount, Source columns, ordered by date."""
     connection = _connect(db_path)
     try:
         rows = connection.execute(
-            "SELECT date, account, amount FROM balance_snapshots ORDER BY date, account"
+            "SELECT date, account, amount, source FROM balance_snapshots ORDER BY date, account"
         ).fetchall()
     finally:
         connection.close()
-    return pd.DataFrame(rows, columns=["Date", "Account", "Amount"])
+    return pd.DataFrame(rows, columns=["Date", "Account", "Amount", "Source"])

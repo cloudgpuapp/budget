@@ -112,7 +112,7 @@ def main():
     if args.command in ("simplefin", "snapshot"):
         accounts = get_accounts()
         if args.command == "snapshot":
-            insert_balance_snapshots(accounts)
+            insert_balance_snapshots(accounts, source="simplefin")
             print(f"Saved balance snapshot for {len(accounts)} account(s).")
             return
         if not accounts:

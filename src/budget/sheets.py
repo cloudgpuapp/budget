@@ -40,13 +40,12 @@ def get_balances_df(service: Resource, spreadsheet_id: str) -> pd.DataFrame:
     Just returns whatever is in the 'Balances' sheet without much modification.
     """
     sheet = "Balances"
-    range_ = f"{sheet}!A1:Z1000"
     response = (
         service.spreadsheets()
         .values()
         .get(
             spreadsheetId=spreadsheet_id,
-            range=range_,
+            range=sheet,
         )
         .execute()
     )

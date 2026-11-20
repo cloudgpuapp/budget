@@ -1,8 +1,9 @@
+from unittest.mock import MagicMock
+
 import pandas as pd
 import pytest
-from unittest.mock import MagicMock, patch
-from budget.sheets import fetch_cells, get_balances_df, list_sheet_names
 
+from budget.sheets import fetch_cells, get_balances_df, list_sheet_names
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +69,20 @@ def test_list_sheet_names_passes_spreadsheet_id():
     service.spreadsheets.return_value.get.assert_called_once_with(
         spreadsheetId="my-spreadsheet-id"
     )
+
+
+def test_get_balances_df_reads_large_range():
+    _sheet_len = 10002
+    _vals = [["Date", "Account", "Amount", "Notes / Usage"]]
+    for i in range(_sheet_len):
+        _vals.append([str(i), str(i), str(i)])
+    service = MagicMock()
+    service.spreadsheets.return_value.values.return_value.get.return_value.execute.return_value = {
+        "values": _vals
+    }
+    balances = get_balances_df(service, "spreadsheet-id")
+
+    assert len(balances) == _sheet_len
 
 
 def test_get_balances_df_pads_omitted_trailing_cells_and_coerces_blank_amounts():

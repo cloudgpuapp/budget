@@ -2,7 +2,18 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Transactions</title>
 <style>
-body{font:16px system-ui;max-width:1300px;margin:2rem auto;padding:0 1rem;color:#222}a{color:#245}h1{margin:1.5rem 0}form.filters{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:1rem 0;padding:1rem;background:#f4f5f7}input,select,button{font:inherit;padding:.4rem}.category-filters{display:flex;gap:.25rem .75rem;flex-wrap:wrap;max-width:420px}.category-filters label{display:flex;align-items:center;gap:.25rem;white-space:nowrap}.category-filters input{margin:0}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.6rem;border-bottom:1px solid #ddd;vertical-align:top}th{white-space:nowrap}.amount{text-align:right;white-space:nowrap}.pending,.manual{font-size:.75rem;border-radius:1rem;background:#fff1c2;padding:.15rem .5rem;color:#654b00;white-space:nowrap}.manual{background:#e8eef8;color:#345}.description{min-width:18rem}.actions{white-space:nowrap}.pagination{display:flex;justify-content:space-between;margin:1rem 0}.muted{color:#666;font-size:.9rem}.spend{display:grid;grid-template-columns:220px 1fr;gap:1.5rem;align-items:center;padding:1rem;background:#f8f9fa;border-radius:.5rem}.pie{width:200px;height:200px;border-radius:50%;background:conic-gradient({{ pie_gradient }});margin:auto}.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.5rem 1rem;list-style:none;padding:0}.legend li{display:flex;gap:.5rem;align-items:center}.swatch{width:.8rem;height:.8rem;border-radius:2px;flex:none}@media(max-width:600px){.spend{grid-template-columns:1fr}.pie{width:170px;height:170px}}
+body{font:16px system-ui;max-width:1300px;margin:2rem auto;padding:0 1rem;color:#222}a{color:#245}h1{margin:1.5rem 0}form.filters{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:1rem 0;padding:1rem;background:#f4f5f7}input,select,button{font:inherit;padding:.4rem}
+.cat-dropdown{position:relative;display:inline-block;vertical-align:middle}
+.cat-dropdown summary{padding:.4rem .6rem;border:1px solid #767676;border-radius:2px;background:#fff;cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:.5rem;min-width:11rem;justify-content:space-between;user-select:none}
+.cat-dropdown summary::-webkit-details-marker{display:none}
+.cat-dropdown summary::after{content:"▾";font-size:.8rem}
+.cat-dropdown[open] summary::after{content:"▴"}
+.cat-menu{position:absolute;top:calc(100% + 2px);left:0;min-width:100%;max-height:240px;overflow-y:auto;background:#fff;border:1px solid #767676;border-radius:2px;box-shadow:0 4px 10px rgba(0,0,0,.12);padding:.25rem 0;z-index:100}
+.cat-menu label{display:flex;align-items:center;gap:.4rem;padding:.35rem .6rem;cursor:pointer;white-space:nowrap}
+.cat-menu label:hover{background:#f4f5f7}
+.cat-menu input{margin:0;padding:0}
+.cat-select-all{border-bottom:1px solid #ddd;font-weight:600;margin-bottom:.2rem}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.6rem;border-bottom:1px solid #ddd;vertical-align:top}th{white-space:nowrap}.amount{text-align:right;white-space:nowrap}.pending,.manual{font-size:.75rem;border-radius:1rem;background:#fff1c2;padding:.15rem .5rem;color:#654b00;white-space:nowrap}.manual{background:#e8eef8;color:#345}.description{min-width:18rem}.actions{white-space:nowrap}.pagination{display:flex;justify-content:space-between;margin:1rem 0}.muted{color:#666;font-size:.9rem}.spend{display:grid;grid-template-columns:220px 1fr;gap:1.5rem;align-items:center;padding:1rem;background:#f8f9fa;border-radius:.5rem}.pie{width:200px;height:200px;border-radius:50%;background:conic-gradient({{ pie_gradient }});margin:auto}.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.5rem 1rem;list-style:none;padding:0}.legend li{display:flex;gap:.5rem;align-items:center}.swatch{width:.8rem;height:.8rem;border-radius:2px;flex:none}@media(max-width:600px){.spend{grid-template-columns:1fr}.pie{width:170px;height:170px}}
 </style></head><body>
 <a href="/">Budget</a> · <a href="/rules">Categories &amp; Rules</a> · <a href="/balances">Balances</a>
 <h1>Transactions</h1>
@@ -17,7 +28,17 @@ body{font:16px system-ui;max-width:1300px;margin:2rem auto;padding:0 1rem;color:
 <input type="hidden" name="account_id" value="{{ filters.account_id }}"><input type="hidden" name="category_id" value="{{ filters.category_id }}"><input type="hidden" name="pending" value="{{ filters.pending }}"><input type="hidden" name="q" value="{{ filters.q }}">
 <label>Month <select name="month"><option value="">All available dates</option>{% for month in months %}<option value="{{ month }}" {% if selected_month == month %}selected{% endif %}>{{ month }}</option>{% endfor %}</select></label>
 <label>From <input type="date" name="start_date" value="{{ start_date }}"></label><label>Through <input type="date" name="end_date" value="{{ end_date }}"></label>
-<fieldset><legend>Chart categories</legend><div class="category-filters"><label><input type="checkbox" name="spend_category_id" value="uncategorized" {% if 'uncategorized' in filters.spend_category_id %}checked{% endif %}>Uncategorized</label>{% for id,name in categories %}<label><input type="checkbox" name="spend_category_id" value="{{ id }}" {% if id|string in filters.spend_category_id %}checked{% endif %}>{{ name }}</label>{% endfor %}</div></fieldset><button>Update chart</button>
+<span>Chart categories
+  <details class="cat-dropdown" id="catDropdown">
+    <summary id="catSummary">Select categories...</summary>
+    <div class="cat-menu">
+      <label class="cat-select-all"><input type="checkbox" id="catSelectAll"> Select All</label>
+      <label><input type="checkbox" class="cat-cb" name="spend_category_id" value="uncategorized" {% if 'uncategorized' in filters.spend_category_id %}checked{% endif %}>Uncategorized</label>
+      {% for id,name in categories %}<label><input type="checkbox" class="cat-cb" name="spend_category_id" value="{{ id }}" {% if id|string in filters.spend_category_id %}checked{% endif %}>{{ name }}</label>{% endfor %}
+    </div>
+  </details>
+</span>
+<button>Update chart</button>
 </form>
 <section class="spend" aria-label="Spending by category chart">
 <div class="pie" role="img" aria-label="Pie chart of {{ '%.2f'|format(spend_total) }} dollars spent by category"></div>
@@ -33,4 +54,35 @@ body{font:16px system-ui;max-width:1300px;margin:2rem auto;padding:0 1rem;color:
 {% else %}<tr><td colspan="6">No transactions match these filters.</td></tr>{% endfor %}
 </tbody></table>
 <nav class="pagination">{% if page > 1 %}<a href="{{ url_for('transactions', page=page-1, **filters) }}">← Previous</a>{% else %}<span></span>{% endif %}<span>Page {{ page }} of {{ pages }}</span>{% if page < pages %}<a href="{{ url_for('transactions', page=page+1, **filters) }}">Next →</a>{% endif %}</nav>
+<script>
+(() => {
+  const dd = document.getElementById('catDropdown');
+  const sum = document.getElementById('catSummary');
+  const all = document.getElementById('catSelectAll');
+  const cbs = Array.from(dd.querySelectorAll('.cat-cb'));
+
+  function sync() {
+    const checked = cbs.filter(cb => cb.checked);
+    if (checked.length === 0) {
+      sum.textContent = 'None selected';
+    } else if (checked.length === cbs.length) {
+      sum.textContent = `All (${checked.length})`;
+    } else if (checked.length === 1) {
+      sum.textContent = checked[0].parentElement.textContent.trim();
+    } else {
+      sum.textContent = `${checked.length} selected`;
+    }
+    all.checked = cbs.length > 0 && checked.length === cbs.length;
+    all.indeterminate = checked.length > 0 && checked.length < cbs.length;
+  }
+
+  all.addEventListener('change', () => {
+    cbs.forEach(cb => cb.checked = all.checked);
+    sync();
+  });
+  cbs.forEach(cb => cb.addEventListener('change', sync));
+  document.addEventListener('click', e => { if (!dd.contains(e.target)) dd.removeAttribute('open'); });
+  sync();
+})();
+</script>
 </body></html>

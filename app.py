@@ -309,7 +309,8 @@ def rules():
         rules_data.append({"id": row[0], "name": row[1], "category_id": row[2], "category": row[3],
                            "priority": row[4], "active": row[5], "match_value": match_value})
     return render_template("rules.html", categories=categories, rules=rules_data,
-                           description=request.args.get("description", ""))
+                           description=request.args.get("description", ""),
+                           selected_category=request.args.get("category_id", ""))
 
 
 @app.post("/categories")
@@ -438,7 +439,104 @@ def run_rules():
 
 @app.route("/transactions")
 def transactions():
-    return render_template("transactions.html", transactions=get_transactions())
+    per_page = 50
+    try:
+        page = max(1, int(request.args.get("page", "1")))
+    except ValueError:
+        page = 1
+    account_id = request.args.get("account_id", "").strip()
+    category_id = request.args.get("category_id", "").strip()
+    pending = request.args.get("pending", "").strip()
+    query = request.args.get("q", "").strip()
+    clauses, values = [], []
+    if account_id:
+        clauses.append("t.account_id = ?")
+        values.append(account_id)
+    if category_id == "uncategorized":
+        clauses.append("t.category_id IS NULL")
+    elif category_id:
+        try:
+            values.append(int(category_id))
+            clauses.append("t.category_id = ?")
+        except ValueError:
+            category_id = ""
+    if pending in ("0", "1"):
+        clauses.append("t.pending = ?")
+        values.append(int(pending))
+    else:
+        pending = ""
+    if query:
+        clauses.append("INSTR(LOWER(t.description), LOWER(?)) > 0")
+        values.append(query)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    connection = _connect()
+    try:
+        total = connection.execute("SELECT COUNT(*) FROM transactions t" + where, values).fetchone()[0]
+        rows = connection.execute(
+            """SELECT t.account_id, t.transaction_id, COALESCE(t.posted_date, t.transacted_at),
+                      a.name, t.description, t.pending, t.amount, t.category_id, c.name,
+                      t.is_manual_category
+               FROM transactions t JOIN accounts a ON a.id=t.account_id
+               LEFT JOIN categories c ON c.id=t.category_id""" + where +
+            " ORDER BY COALESCE(t.posted_date, t.transacted_at) DESC, t.rowid DESC LIMIT ? OFFSET ?",
+            [*values, per_page, (page - 1) * per_page],
+        ).fetchall()
+        accounts = connection.execute("SELECT id, name FROM accounts ORDER BY name COLLATE NOCASE").fetchall()
+        categories = connection.execute("SELECT id, name FROM categories ORDER BY name COLLATE NOCASE").fetchall()
+    finally:
+        connection.close()
+    transactions_data = [dict(zip(("account_id", "transaction_id", "date", "account", "description",
+                                   "pending", "amount", "category_id", "category", "manual"), row))
+                         for row in rows]
+    filters = {"account_id": account_id, "category_id": category_id, "pending": pending, "q": query}
+    return render_template("transactions.html", transactions=transactions_data, accounts=accounts,
+                           categories=categories, filters=filters, page=page,
+                           pages=max(1, (total + per_page - 1) // per_page), total=total)
+
+
+@app.post("/transactions/<account_id>/<transaction_id>/category")
+def update_transaction_category(account_id, transaction_id):
+    raw_category_id = request.form.get("category_id", "").strip()
+    connection = _connect()
+    try:
+        exists = connection.execute(
+            "SELECT description FROM transactions WHERE account_id=? AND transaction_id=?",
+            (account_id, transaction_id),
+        ).fetchone()
+        if exists is None:
+            flash("Transaction not found.", "error")
+        elif raw_category_id:
+            try:
+                category_id = int(raw_category_id)
+            except ValueError:
+                category_id = None
+            if category_id is None or not connection.execute("SELECT 1 FROM categories WHERE id=?", (category_id,)).fetchone():
+                flash("Choose a valid category.", "error")
+            else:
+                connection.execute(
+                    "UPDATE transactions SET category_id=?, is_manual_category=1, rule_id=NULL WHERE account_id=? AND transaction_id=?",
+                    (category_id, account_id, transaction_id),
+                )
+        else:
+            from budget.categorizer import categorize_transaction
+            transaction = connection.execute(
+                "SELECT description, category_id, rule_id FROM transactions WHERE account_id=? AND transaction_id=?",
+                (account_id, transaction_id),
+            ).fetchone()
+            category_id, rule_id = categorize_transaction(connection, {
+                "description": transaction[0], "category_id": None, "rule_id": None, "is_manual_category": 0,
+            })
+            connection.execute(
+                "UPDATE transactions SET category_id=?, rule_id=?, is_manual_category=0 WHERE account_id=? AND transaction_id=?",
+                (category_id, rule_id, account_id, transaction_id),
+            )
+        connection.commit()
+    finally:
+        connection.close()
+    return_to = request.form.get("return_to", "")
+    if not return_to.startswith("/") or return_to.startswith("//"):
+        return_to = url_for("transactions")
+    return redirect(return_to)
 
 
 if __name__ == "__main__":

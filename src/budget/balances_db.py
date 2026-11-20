@@ -83,6 +83,7 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )""")
     connection.execute("CREATE INDEX IF NOT EXISTS idx_rules_priority ON categorization_rules(is_active, priority, id)")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_transactions_sort_date ON transactions(COALESCE(posted_date, transacted_at) DESC)")
     transaction_columns = {row[1] for row in connection.execute("PRAGMA table_info(transactions)")}
     for column, definition in (
         ("category_id", "INTEGER REFERENCES categories(id) ON DELETE SET NULL"),

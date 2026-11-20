@@ -1,18 +1,20 @@
-from budget.analyze import pivot_on_account
 import pandas as pd
 
+from budget.analyze import pivot_on_account
 from budget.balances_db import (
     get_balance_history,
     import_balance_history,
     insert_balance_snapshots,
 )
 
+BALANCE_COLUMNS = ["Date", "Account", "Amount", "Source"]
+
 
 def test_empty_database_has_expected_columns(tmp_path):
     history = get_balance_history(db_path=tmp_path / "balances.sqlite")
 
     assert history.empty
-    assert list(history.columns) == ["Date", "Account", "Amount"]
+    assert list(history.columns) == BALANCE_COLUMNS
 
 
 def test_insert_is_idempotent_per_account_and_date(tmp_path):
@@ -21,11 +23,13 @@ def test_insert_is_idempotent_per_account_and_date(tmp_path):
         [{"name": "Checking", "balance": "12.50"}],
         "2026-01-02",
         db_path=db_path,
+        source="manual",
     )
     insert_balance_snapshots(
         [{"Account": "Checking", "Amount": 15}],
         "2026-01-02",
         db_path=db_path,
+        source="manual",
     )
 
     history = get_balance_history(db_path=db_path)
@@ -34,6 +38,7 @@ def test_insert_is_idempotent_per_account_and_date(tmp_path):
         "Date": "2026-01-02",
         "Account": "Checking",
         "Amount": 15.0,
+        "Source": "manual",
     }
 
 
@@ -49,7 +54,7 @@ def test_history_is_date_ordered_and_works_with_account_pivot(tmp_path):
     )
 
     history = get_balance_history(db_path=db_path)
-    assert list(history.columns) == ["Date", "Account", "Amount"]
+    assert list(history.columns) == BALANCE_COLUMNS
     assert history["Date"].tolist() == ["2026-01-01", "2026-01-01", "2026-02-01"]
     pivot = pivot_on_account(history)
     assert pivot.loc["2026-01-01", "Checking"] == 10
@@ -83,7 +88,12 @@ def test_import_sheet_history_skips_incomplete_rows_and_last_duplicate_wins(tmp_
     assert import_balance_history(balances, db_path=db_path) == (2, 3)
     history = get_balance_history(db_path=db_path)
     assert history.to_dict("records") == [
-        {"Date": "2026-01-02", "Account": "Checking", "Amount": 15.0}
+        {
+            "Date": "2026-01-02",
+            "Account": "Checking",
+            "Amount": 15.0,
+            "Source": "manual",
+        }
     ]
 
     pivot = pivot_on_account(history)

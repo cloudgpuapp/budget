@@ -38,7 +38,9 @@ def _request_error(action: str, exc: Exception) -> SimpleFINError:
     if isinstance(exc, requests.HTTPError):
         status = getattr(getattr(exc, "response", None), "status_code", None)
         suffix = f" (HTTP {status})" if status is not None else ""
-        return SimpleFINError(f"SimpleFIN {action} request returned an HTTP error{suffix}")
+        return SimpleFINError(
+            f"SimpleFIN {action} request returned an HTTP error{suffix}"
+        )
     return SimpleFINError(f"SimpleFIN {action} request failed")
 
 
@@ -111,7 +113,9 @@ def get_accounts(
                 )
                 for error in errors
             ]
-            raise SimpleFINError("SimpleFIN reported account errors: " + "; ".join(safe_errors))
+            raise SimpleFINError(
+                "SimpleFIN reported account errors: " + "; ".join(safe_errors)
+            )
         normalized = []
         for account in accounts:
             account_id = account["id"]
@@ -122,13 +126,17 @@ def get_accounts(
             balance_date = account.get("balance-date")
             if balance_date is not None:
                 try:
-                    balance_date = datetime.fromtimestamp(
-                        float(balance_date), UTC
-                    ).date().isoformat()
+                    balance_date = (
+                        datetime.fromtimestamp(float(balance_date), UTC)
+                        .date()
+                        .isoformat()
+                    )
                 except (TypeError, ValueError, OverflowError, OSError):
                     balance_date = None
             if balance_date is None:
-                logger.warning("SimpleFIN account %s has no valid balance date", account_id)
+                logger.warning(
+                    "SimpleFIN account %s has no valid balance date", account_id
+                )
             elif (date.today() - date.fromisoformat(balance_date)).days > 1:
                 logger.warning(
                     "SimpleFIN account %s balance is stale (as of %s)",
@@ -173,7 +181,11 @@ def get_transactions(
     try:
         today = date.today()
         end = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
-        start = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+        start = (
+            date.fromisoformat(start_date)
+            if isinstance(start_date, str)
+            else start_date
+        )
         end = end or today + timedelta(days=1)
         start = start or end - timedelta(days=90)
         if start >= end or (end - start).days > 90:
@@ -190,7 +202,9 @@ def get_transactions(
         endpoint = urlunsplit(
             (parts.scheme, parts.netloc, parts.path.rstrip("/") + "/accounts", "", "")
         )
-        response = requests.get(endpoint, params=params, timeout=_FETCH_TIMEOUT, allow_redirects=False)
+        response = requests.get(
+            endpoint, params=params, timeout=_FETCH_TIMEOUT, allow_redirects=False
+        )
         response.raise_for_status()
         payload = response.json()
         accounts = payload["accounts"]
@@ -228,4 +242,6 @@ def get_transactions(
     except requests.RequestException as exc:
         raise _request_error("transactions", exc) from None
     except (ValueError, KeyError, TypeError, AttributeError, OverflowError, OSError):
-        raise SimpleFINError("SimpleFIN returned malformed transaction data or date range") from None
+        raise SimpleFINError(
+            "SimpleFIN returned malformed transaction data or date range"
+        ) from None

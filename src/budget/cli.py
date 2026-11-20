@@ -64,8 +64,12 @@ def main():
         "transactions",
         help="Fetch and save recent SimpleFIN transactions.",
     )
-    transactions_parser.add_argument("--start-date", help="Inclusive start date (YYYY-MM-DD).")
-    transactions_parser.add_argument("--end-date", help="Exclusive end date (YYYY-MM-DD).")
+    transactions_parser.add_argument(
+        "--start-date", help="Inclusive start date (YYYY-MM-DD)."
+    )
+    transactions_parser.add_argument(
+        "--end-date", help="Exclusive end date (YYYY-MM-DD)."
+    )
 
     subparsers.add_parser(
         "snapshot",

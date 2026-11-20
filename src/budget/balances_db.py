@@ -82,17 +82,27 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
         conditions TEXT NOT NULL CHECK (json_valid(conditions)),
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )""")
-    connection.execute("CREATE INDEX IF NOT EXISTS idx_rules_priority ON categorization_rules(is_active, priority, id)")
-    connection.execute("CREATE INDEX IF NOT EXISTS idx_transactions_sort_date ON transactions(COALESCE(posted_date, transacted_at) DESC)")
-    transaction_columns = {row[1] for row in connection.execute("PRAGMA table_info(transactions)")}
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_rules_priority ON categorization_rules(is_active, priority, id)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transactions_sort_date ON transactions(COALESCE(posted_date, transacted_at) DESC)"
+    )
+    transaction_columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(transactions)")
+    }
     for column, definition in (
         ("category_id", "INTEGER REFERENCES categories(id) ON DELETE SET NULL"),
         ("rule_id", "INTEGER REFERENCES categorization_rules(id) ON DELETE SET NULL"),
         ("is_manual_category", "INTEGER NOT NULL DEFAULT 0"),
     ):
         if column not in transaction_columns:
-            connection.execute(f"ALTER TABLE transactions ADD COLUMN {column} {definition}")
-    columns = {row[1] for row in connection.execute("PRAGMA table_info(balance_snapshots)")}
+            connection.execute(
+                f"ALTER TABLE transactions ADD COLUMN {column} {definition}"
+            )
+    columns = {
+        row[1] for row in connection.execute("PRAGMA table_info(balance_snapshots)")
+    }
     if "source" not in columns:
         # Existing rows came from the manually maintained Balances sheet.
         connection.execute(
@@ -208,7 +218,12 @@ def import_balance_history(
             skipped += 1
             continue
         rows.append(
-            (str(account_value).strip(), parsed_date.date().isoformat(), amount, "manual")
+            (
+                str(account_value).strip(),
+                parsed_date.date().isoformat(),
+                amount,
+                "manual",
+            )
         )
 
     connection = _connect(db_path)
@@ -265,15 +280,37 @@ def insert_simplefin_transactions(
             description = transaction.get("description")
             posted = transaction.get("posted")
             amount = transaction.get("amount")
-            if transaction_id is None or description is None or posted is None or amount is None:
-                raise ValueError("Each transaction must include id, posted, amount, and description")
-            posted_date = None if int(posted) == 0 else datetime.fromtimestamp(int(posted), UTC).date().isoformat()
+            if (
+                transaction_id is None
+                or description is None
+                or posted is None
+                or amount is None
+            ):
+                raise ValueError(
+                    "Each transaction must include id, posted, amount, and description"
+                )
+            posted_date = (
+                None
+                if int(posted) == 0
+                else datetime.fromtimestamp(int(posted), UTC).date().isoformat()
+            )
             transacted = transaction.get("transacted_at")
-            transacted_date = None if transacted in (None, 0) else datetime.fromtimestamp(int(transacted), UTC).date().isoformat()
-            transaction_rows.append((
-                str(account_id), str(transaction_id), posted_date, float(amount),
-                str(description), int(bool(transaction.get("pending", False))), transacted_date,
-            ))
+            transacted_date = (
+                None
+                if transacted in (None, 0)
+                else datetime.fromtimestamp(int(transacted), UTC).date().isoformat()
+            )
+            transaction_rows.append(
+                (
+                    str(account_id),
+                    str(transaction_id),
+                    posted_date,
+                    float(amount),
+                    str(description),
+                    int(bool(transaction.get("pending", False))),
+                    transacted_date,
+                )
+            )
 
     connection = _connect(db_path)
     try:
@@ -314,6 +351,16 @@ def get_transactions(*, db_path: str | os.PathLike[str] | None = None) -> pd.Dat
         ).fetchall()
     finally:
         connection.close()
-    return pd.DataFrame(rows, columns=[
-        "Date", "Account", "Amount", "Description", "Pending", "Transaction ID", "Transacted At", "Category"
-    ])
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "Date",
+            "Account",
+            "Amount",
+            "Description",
+            "Pending",
+            "Transaction ID",
+            "Transacted At",
+            "Category",
+        ],
+    )

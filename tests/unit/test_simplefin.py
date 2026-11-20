@@ -183,7 +183,9 @@ def test_http_status_is_reported_without_secret_url(operation, monkeypatch, tmp_
     ):
         with pytest.raises(SimpleFINError) as exc:
             if operation == "claim":
-                claim_setup_token(base64.b64encode(b"https://bridge.example/claim").decode())
+                claim_setup_token(
+                    base64.b64encode(b"https://bridge.example/claim").decode()
+                )
             else:
                 get_accounts(secret_url)
     assert "403" in str(exc.value)

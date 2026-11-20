@@ -14,12 +14,17 @@ def _matches(conditions: Mapping[str, Any], transaction: Mapping[str, Any]) -> b
     for condition in rules:
         if not isinstance(condition, dict):
             return False
-        if condition.get("field") != "description" or condition.get("operator") != "contains":
+        if (
+            condition.get("field") != "description"
+            or condition.get("operator") != "contains"
+        ):
             return False
         value = condition.get("value")
         if not isinstance(value, str) or not value:
             return False
-        outcomes.append(value.casefold() in str(transaction.get("description") or "").casefold())
+        outcomes.append(
+            value.casefold() in str(transaction.get("description") or "").casefold()
+        )
     match_type = conditions.get("match_type", "ALL")
     if match_type == "ALL":
         return all(outcomes)
@@ -28,7 +33,9 @@ def _matches(conditions: Mapping[str, Any], transaction: Mapping[str, Any]) -> b
     return False
 
 
-def categorize_transaction(connection: sqlite3.Connection, transaction: Mapping[str, Any]) -> tuple[int | None, int | None]:
+def categorize_transaction(
+    connection: sqlite3.Connection, transaction: Mapping[str, Any]
+) -> tuple[int | None, int | None]:
     """Find the first matching active rule, respecting manual overrides."""
     if transaction.get("is_manual_category", 0):
         return transaction.get("category_id"), transaction.get("rule_id")
@@ -54,10 +61,15 @@ def categorize_unassigned(connection: sqlite3.Connection) -> int:
     ).fetchall()
     changed = 0
     for account_id, transaction_id, description, old_category, old_rule, manual in rows:
-        category_id, rule_id = categorize_transaction(connection, {
-            "description": description, "category_id": old_category,
-            "rule_id": old_rule, "is_manual_category": manual,
-        })
+        category_id, rule_id = categorize_transaction(
+            connection,
+            {
+                "description": description,
+                "category_id": old_category,
+                "rule_id": old_rule,
+                "is_manual_category": manual,
+            },
+        )
         if (category_id, rule_id) != (old_category, old_rule):
             connection.execute(
                 "UPDATE transactions SET category_id = ?, rule_id = ? "

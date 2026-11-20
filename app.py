@@ -260,12 +260,14 @@ def balances():
 
             for account, rows in history.groupby("Account", sort=True):
                 latest = rows.sort_values("Date").iloc[-1]
-                accounts.append({
-                    "name": account,
-                    "amount": float(latest["Amount"]),
-                    "date": latest["Date"],
-                    "stale": latest["Date"] != latest_date,
-                })
+                accounts.append(
+                    {
+                        "name": account,
+                        "amount": float(latest["Amount"]),
+                        "date": latest["Date"],
+                        "stale": latest["Date"] != latest_date,
+                    }
+                )
 
             trend = []
             dates = sorted(history["Date"].unique())
@@ -300,7 +302,9 @@ def balances():
 def rules():
     connection = _connect()
     try:
-        categories = connection.execute("SELECT id, name FROM categories ORDER BY name COLLATE NOCASE").fetchall()
+        categories = connection.execute(
+            "SELECT id, name FROM categories ORDER BY name COLLATE NOCASE"
+        ).fetchall()
         rule_rows = connection.execute(
             """SELECT r.id, r.name, r.category_id, c.name, r.priority, r.is_active, r.conditions
                FROM categorization_rules r JOIN categories c ON c.id=r.category_id
@@ -315,11 +319,24 @@ def rules():
             match_value = conditions.get("rules", [{}])[0].get("value", "")
         except (json.JSONDecodeError, AttributeError, IndexError):
             match_value = ""
-        rules_data.append({"id": row[0], "name": row[1], "category_id": row[2], "category": row[3],
-                           "priority": row[4], "active": row[5], "match_value": match_value})
-    return render_template("rules.html", categories=categories, rules=rules_data,
-                           description=request.args.get("description", ""),
-                           selected_category=request.args.get("category_id", ""))
+        rules_data.append(
+            {
+                "id": row[0],
+                "name": row[1],
+                "category_id": row[2],
+                "category": row[3],
+                "priority": row[4],
+                "active": row[5],
+                "match_value": match_value,
+            }
+        )
+    return render_template(
+        "rules.html",
+        categories=categories,
+        rules=rules_data,
+        description=request.args.get("description", ""),
+        selected_category=request.args.get("category_id", ""),
+    )
 
 
 @app.post("/categories")
@@ -349,9 +366,16 @@ def rename_category(category_id):
         if not name:
             flash("Enter a category name.", "error")
         else:
-            connection.execute("UPDATE categories SET name=? WHERE id=?", (name, category_id))
+            connection.execute(
+                "UPDATE categories SET name=? WHERE id=?", (name, category_id)
+            )
             connection.commit()
-            flash("Category renamed." if connection.total_changes else "Category not found.", "success")
+            flash(
+                "Category renamed."
+                if connection.total_changes
+                else "Category not found.",
+                "success",
+            )
     except sqlite3.IntegrityError:
         connection.rollback()
         flash(f"Category {name} already exists.", "error")
@@ -372,7 +396,10 @@ def delete_category(category_id):
             return redirect(url_for("rules"))
         connection.execute("DELETE FROM categories WHERE id=?", (category_id,))
         connection.commit()
-        flash("Category deleted." if connection.total_changes else "Category not found.", "success")
+        flash(
+            "Category deleted." if connection.total_changes else "Category not found.",
+            "success",
+        )
     except sqlite3.IntegrityError:
         connection.rollback()
         flash("Category is in use by a rule or transaction.", "error")
@@ -391,19 +418,44 @@ def _save_rule(rule_id=None):
         category_id, priority = 0, 0
     connection = _connect()
     try:
-        if not value or not connection.execute("SELECT 1 FROM categories WHERE id=?", (category_id,)).fetchone():
+        if (
+            not value
+            or not connection.execute(
+                "SELECT 1 FROM categories WHERE id=?", (category_id,)
+            ).fetchone()
+        ):
             flash("Choose a category and enter a match value.", "error")
         else:
-            conditions = json.dumps({"match_type": "ALL", "rules": [
-                {"field": "description", "operator": "contains", "value": value}
-            ]})
+            conditions = json.dumps(
+                {
+                    "match_type": "ALL",
+                    "rules": [
+                        {"field": "description", "operator": "contains", "value": value}
+                    ],
+                }
+            )
             if rule_id is None:
-                connection.execute("INSERT INTO categorization_rules(name, category_id, priority, conditions) VALUES (?, ?, ?, ?)",
-                                   (request.form.get("name", "").strip() or None, category_id, priority, conditions))
+                connection.execute(
+                    "INSERT INTO categorization_rules(name, category_id, priority, conditions) VALUES (?, ?, ?, ?)",
+                    (
+                        request.form.get("name", "").strip() or None,
+                        category_id,
+                        priority,
+                        conditions,
+                    ),
+                )
             else:
-                connection.execute("UPDATE categorization_rules SET name=?, category_id=?, priority=?, is_active=?, conditions=? WHERE id=?",
-                                   (request.form.get("name", "").strip() or None, category_id, priority,
-                                    int(request.form.get("is_active") == "1"), conditions, rule_id))
+                connection.execute(
+                    "UPDATE categorization_rules SET name=?, category_id=?, priority=?, is_active=?, conditions=? WHERE id=?",
+                    (
+                        request.form.get("name", "").strip() or None,
+                        category_id,
+                        priority,
+                        int(request.form.get("is_active") == "1"),
+                        conditions,
+                        rule_id,
+                    ),
+                )
             recategorize_all(connection)
             connection.commit()
             flash("Rule saved.", "success")
@@ -457,6 +509,11 @@ def transactions():
     category_id = request.args.get("category_id", "").strip()
     pending = request.args.get("pending", "").strip()
     query = request.args.get("q", "").strip()
+    spend_category_ids = [
+        value.strip()
+        for value in request.args.getlist("spend_category_id")
+        if value.strip()
+    ]
     selected_month = request.args.get("month", "").strip()
     start_date = request.args.get("start_date", "").strip()
     end_date = request.args.get("end_date", "").strip()
@@ -483,25 +540,35 @@ def transactions():
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     connection = _connect()
     try:
-        total = connection.execute("SELECT COUNT(*) FROM transactions t" + where, values).fetchone()[0]
+        total = connection.execute(
+            "SELECT COUNT(*) FROM transactions t" + where, values
+        ).fetchone()[0]
         rows = connection.execute(
             """SELECT t.account_id, t.transaction_id, COALESCE(t.posted_date, t.transacted_at),
                       a.name, t.description, t.pending, t.amount, t.category_id, c.name,
                       t.is_manual_category
                FROM transactions t JOIN accounts a ON a.id=t.account_id
-               LEFT JOIN categories c ON c.id=t.category_id""" + where +
-            " ORDER BY COALESCE(t.posted_date, t.transacted_at) DESC, t.rowid DESC LIMIT ? OFFSET ?",
+               LEFT JOIN categories c ON c.id=t.category_id"""
+            + where
+            + " ORDER BY COALESCE(t.posted_date, t.transacted_at) DESC, t.rowid DESC LIMIT ? OFFSET ?",
             [*values, per_page, (page - 1) * per_page],
         ).fetchall()
-        accounts = connection.execute("SELECT id, name FROM accounts ORDER BY name COLLATE NOCASE").fetchall()
-        categories = connection.execute("SELECT id, name FROM categories ORDER BY name COLLATE NOCASE").fetchall()
-        months = [row[0] for row in connection.execute(
-            "SELECT DISTINCT substr(COALESCE(posted_date, transacted_at), 1, 7) "
-            "FROM transactions WHERE COALESCE(posted_date, transacted_at) IS NOT NULL "
-            "ORDER BY 1 DESC"
-        ).fetchall()]
+        accounts = connection.execute(
+            "SELECT id, name FROM accounts ORDER BY name COLLATE NOCASE"
+        ).fetchall()
+        categories = connection.execute(
+            "SELECT id, name FROM categories ORDER BY name COLLATE NOCASE"
+        ).fetchall()
+        months = [
+            row[0]
+            for row in connection.execute(
+                "SELECT DISTINCT substr(COALESCE(posted_date, transacted_at), 1, 7) "
+                "FROM transactions WHERE COALESCE(posted_date, transacted_at) IS NOT NULL "
+                "ORDER BY 1 DESC"
+            ).fetchall()
+        ]
         # A date range takes precedence when either date is supplied.
-        date_clauses = ["t.amount < 0"]
+        date_clauses = []
         date_values = []
         has_date_range = bool(start_date or end_date)
         if start_date:
@@ -511,43 +578,118 @@ def transactions():
             date_clauses.append("COALESCE(t.posted_date, t.transacted_at) <= ?")
             date_values.append(end_date)
         elif selected_month and not has_date_range:
-            date_clauses.append("substr(COALESCE(t.posted_date, t.transacted_at), 1, 7) = ?")
+            date_clauses.append(
+                "substr(COALESCE(t.posted_date, t.transacted_at), 1, 7) = ?"
+            )
             date_values.append(selected_month)
         if has_date_range:
             selected_month = ""
+        chart_category_clauses = []
+        chart_category_values = []
+        chart_category_ids = []
+        for value in spend_category_ids:
+            if value == "uncategorized":
+                continue
+            try:
+                chart_category_ids.append(int(value))
+            except ValueError:
+                continue
+        if "uncategorized" in spend_category_ids:
+            chart_category_clauses.append("t.category_id IS NULL")
+        if chart_category_ids:
+            chart_category_clauses.append(
+                "t.category_id IN (" + ",".join("?" for _ in chart_category_ids) + ")"
+            )
+            chart_category_values.extend(chart_category_ids)
+        chart_filter_sql = (
+            " AND (" + " OR ".join(chart_category_clauses) + ")"
+            if chart_category_clauses
+            else ""
+        )
         spend_rows = connection.execute(
             "SELECT COALESCE(c.name, 'Uncategorized'), SUM(-t.amount) "
-            "FROM transactions t LEFT JOIN categories c ON c.id=t.category_id WHERE " +
-            " AND ".join(date_clauses) + " GROUP BY t.category_id, c.name ORDER BY 1 COLLATE NOCASE",
-            date_values,
+            "FROM transactions t LEFT JOIN categories c ON c.id=t.category_id WHERE t.amount < 0"
+            + ((" AND " + " AND ".join(date_clauses)) if date_clauses else "")
+            + chart_filter_sql
+            + " GROUP BY t.category_id, c.name ORDER BY 1 COLLATE NOCASE",
+            [*date_values, *chart_category_values],
         ).fetchall()
     finally:
         connection.close()
-    transactions_data = [dict(zip(("account_id", "transaction_id", "date", "account", "description",
-                                   "pending", "amount", "category_id", "category", "manual"), row))
-                         for row in rows]
-    filters = {"account_id": account_id, "category_id": category_id, "pending": pending, "q": query,
-               "month": selected_month, "start_date": start_date, "end_date": end_date}
+    transactions_data = [
+        dict(
+            zip(
+                (
+                    "account_id",
+                    "transaction_id",
+                    "date",
+                    "account",
+                    "description",
+                    "pending",
+                    "amount",
+                    "category_id",
+                    "category",
+                    "manual",
+                ),
+                row,
+            )
+        )
+        for row in rows
+    ]
+    filters = {
+        "account_id": account_id,
+        "category_id": category_id,
+        "pending": pending,
+        "q": query,
+        "month": selected_month,
+        "start_date": start_date,
+        "end_date": end_date,
+        "spend_category_id": spend_category_ids,
+    }
     spend_total = sum(amount for _, amount in spend_rows)
-    palette = ["#4778a8", "#e08b45", "#65a36e", "#b65d5d", "#8a70ad", "#c5a537", "#4b9b9a", "#ce719b", "#7d8791", "#9b704d"]
+    palette = [
+        "#4778a8",
+        "#e08b45",
+        "#65a36e",
+        "#b65d5d",
+        "#8a70ad",
+        "#c5a537",
+        "#4b9b9a",
+        "#ce719b",
+        "#7d8791",
+        "#9b704d",
+    ]
     spend_breakdown = []
     gradient_stops = []
     position = 0.0
     for index, (name, amount) in enumerate(spend_rows):
         percent = amount / spend_total * 100 if spend_total else 0
         color = palette[index % len(palette)]
-        spend_breakdown.append({"name": name, "amount": amount, "percent": percent, "color": color})
+        spend_breakdown.append(
+            {"name": name, "amount": amount, "percent": percent, "color": color}
+        )
         if percent > 0:
             next_position = position + percent * 3.6
             gradient_stops.append(f"{color} {position:.2f}deg {next_position:.2f}deg")
             position = next_position
     pie_gradient = ", ".join(gradient_stops) or "#e5e7eb 0deg 360deg"
-    return render_template("transactions.html", transactions=transactions_data, accounts=accounts,
-                           categories=categories, filters=filters, page=page,
-                           pages=max(1, (total + per_page - 1) // per_page), total=total,
-                           months=months, selected_month=selected_month, start_date=start_date,
-                           end_date=end_date, spend_breakdown=spend_breakdown,
-                           spend_total=spend_total, pie_gradient=pie_gradient)
+    return render_template(
+        "transactions.html",
+        transactions=transactions_data,
+        accounts=accounts,
+        categories=categories,
+        filters=filters,
+        page=page,
+        pages=max(1, (total + per_page - 1) // per_page),
+        total=total,
+        months=months,
+        selected_month=selected_month,
+        start_date=start_date,
+        end_date=end_date,
+        spend_breakdown=spend_breakdown,
+        spend_total=spend_total,
+        pie_gradient=pie_gradient,
+    )
 
 
 @app.post("/transactions/<account_id>/<transaction_id>/category")
@@ -566,7 +708,12 @@ def update_transaction_category(account_id, transaction_id):
                 category_id = int(raw_category_id)
             except ValueError:
                 category_id = None
-            if category_id is None or not connection.execute("SELECT 1 FROM categories WHERE id=?", (category_id,)).fetchone():
+            if (
+                category_id is None
+                or not connection.execute(
+                    "SELECT 1 FROM categories WHERE id=?", (category_id,)
+                ).fetchone()
+            ):
                 flash("Choose a valid category.", "error")
             else:
                 connection.execute(
@@ -575,13 +722,20 @@ def update_transaction_category(account_id, transaction_id):
                 )
         else:
             from budget.categorizer import categorize_transaction
+
             transaction = connection.execute(
                 "SELECT description, category_id, rule_id FROM transactions WHERE account_id=? AND transaction_id=?",
                 (account_id, transaction_id),
             ).fetchone()
-            category_id, rule_id = categorize_transaction(connection, {
-                "description": transaction[0], "category_id": None, "rule_id": None, "is_manual_category": 0,
-            })
+            category_id, rule_id = categorize_transaction(
+                connection,
+                {
+                    "description": transaction[0],
+                    "category_id": None,
+                    "rule_id": None,
+                    "is_manual_category": 0,
+                },
+            )
             connection.execute(
                 "UPDATE transactions SET category_id=?, rule_id=?, is_manual_category=0 WHERE account_id=? AND transaction_id=?",
                 (category_id, rule_id, account_id, transaction_id),

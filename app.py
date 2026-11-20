@@ -11,16 +11,20 @@ Run:
 """
 
 import logging
+import json
 import os
+import secrets
+import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import quote, unquote
 
 from dotenv import load_dotenv
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, flash, redirect, render_template, request, url_for
 
 from budget.analyze import build_budget
-from budget.balances_db import get_balance_history
+from budget.balances_db import _connect, get_balance_history, get_transactions
+from budget.categorizer import recategorize_all
 from budget.cache import budget_cache
 from budget.config import ConfigError, get_env, load_toml
 from budget.sheets import build_service, fetch_cells, list_sheet_names
@@ -28,6 +32,7 @@ from budget.sheets import build_service, fetch_cells, list_sheet_names
 load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -280,6 +285,160 @@ def balances():
         source_filter=source_filter,
         error=error,
     )
+
+
+@app.route("/rules", methods=["GET"])
+def rules():
+    connection = _connect()
+    try:
+        categories = connection.execute("SELECT id, name FROM categories ORDER BY name COLLATE NOCASE").fetchall()
+        rule_rows = connection.execute(
+            """SELECT r.id, r.name, r.category_id, c.name, r.priority, r.is_active, r.conditions
+               FROM categorization_rules r JOIN categories c ON c.id=r.category_id
+               ORDER BY r.priority, r.id"""
+        ).fetchall()
+    finally:
+        connection.close()
+    rules_data = []
+    for row in rule_rows:
+        try:
+            conditions = json.loads(row[6])
+            match_value = conditions.get("rules", [{}])[0].get("value", "")
+        except (json.JSONDecodeError, AttributeError, IndexError):
+            match_value = ""
+        rules_data.append({"id": row[0], "name": row[1], "category_id": row[2], "category": row[3],
+                           "priority": row[4], "active": row[5], "match_value": match_value})
+    return render_template("rules.html", categories=categories, rules=rules_data,
+                           description=request.args.get("description", ""))
+
+
+@app.post("/categories")
+def create_category():
+    name = request.form.get("name", "").strip()
+    if not name:
+        flash("Enter a category name.", "error")
+    else:
+        connection = _connect()
+        try:
+            connection.execute("INSERT INTO categories(name) VALUES (?)", (name,))
+            connection.commit()
+            flash(f"Added category {name}.", "success")
+        except sqlite3.IntegrityError:
+            connection.rollback()
+            flash(f"Category {name} already exists.", "error")
+        finally:
+            connection.close()
+    return redirect(url_for("rules"))
+
+
+@app.post("/categories/<int:category_id>/rename")
+def rename_category(category_id):
+    name = request.form.get("name", "").strip()
+    connection = _connect()
+    try:
+        if not name:
+            flash("Enter a category name.", "error")
+        else:
+            connection.execute("UPDATE categories SET name=? WHERE id=?", (name, category_id))
+            connection.commit()
+            flash("Category renamed." if connection.total_changes else "Category not found.", "success")
+    except sqlite3.IntegrityError:
+        connection.rollback()
+        flash(f"Category {name} already exists.", "error")
+    finally:
+        connection.close()
+    return redirect(url_for("rules"))
+
+
+@app.post("/categories/<int:category_id>/delete")
+def delete_category(category_id):
+    connection = _connect()
+    try:
+        referenced = connection.execute(
+            "SELECT 1 FROM transactions WHERE category_id=? LIMIT 1", (category_id,)
+        ).fetchone()
+        if referenced:
+            flash("Category is in use by a transaction.", "error")
+            return redirect(url_for("rules"))
+        connection.execute("DELETE FROM categories WHERE id=?", (category_id,))
+        connection.commit()
+        flash("Category deleted." if connection.total_changes else "Category not found.", "success")
+    except sqlite3.IntegrityError:
+        connection.rollback()
+        flash("Category is in use by a rule or transaction.", "error")
+    finally:
+        connection.close()
+    return redirect(url_for("rules"))
+
+
+def _save_rule(rule_id=None):
+    category_raw = request.form.get("category_id", "")
+    value = request.form.get("value", "").strip()
+    try:
+        category_id = int(category_raw)
+        priority = int(request.form.get("priority", "0"))
+    except ValueError:
+        category_id, priority = 0, 0
+    connection = _connect()
+    try:
+        if not value or not connection.execute("SELECT 1 FROM categories WHERE id=?", (category_id,)).fetchone():
+            flash("Choose a category and enter a match value.", "error")
+        else:
+            conditions = json.dumps({"match_type": "ALL", "rules": [
+                {"field": "description", "operator": "contains", "value": value}
+            ]})
+            if rule_id is None:
+                connection.execute("INSERT INTO categorization_rules(name, category_id, priority, conditions) VALUES (?, ?, ?, ?)",
+                                   (request.form.get("name", "").strip() or None, category_id, priority, conditions))
+            else:
+                connection.execute("UPDATE categorization_rules SET name=?, category_id=?, priority=?, is_active=?, conditions=? WHERE id=?",
+                                   (request.form.get("name", "").strip() or None, category_id, priority,
+                                    int(request.form.get("is_active") == "1"), conditions, rule_id))
+            recategorize_all(connection)
+            connection.commit()
+            flash("Rule saved.", "success")
+    finally:
+        connection.close()
+    return redirect(url_for("rules"))
+
+
+@app.post("/rules")
+def create_rule():
+    return _save_rule()
+
+
+@app.post("/rules/<int:rule_id>/edit")
+def edit_rule(rule_id):
+    return _save_rule(rule_id)
+
+
+@app.post("/rules/<int:rule_id>/delete")
+def delete_rule(rule_id):
+    connection = _connect()
+    try:
+        connection.execute("DELETE FROM categorization_rules WHERE id=?", (rule_id,))
+        recategorize_all(connection)
+        connection.commit()
+    finally:
+        connection.close()
+    return redirect(url_for("rules"))
+
+
+@app.post("/rules/run")
+def run_rules():
+    connection = _connect()
+    try:
+        count = recategorize_all(connection)
+        connection.commit()
+    finally:
+        connection.close()
+    flash(f"Updated {count} transaction(s).", "success")
+    return redirect(url_for("rules"))
+
+
+@app.route("/transactions")
+def transactions():
+    return render_template("transactions.html", transactions=get_transactions())
 
 
 if __name__ == "__main__":

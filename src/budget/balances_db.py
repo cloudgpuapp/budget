@@ -60,9 +60,37 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
             description TEXT NOT NULL,
             pending INTEGER NOT NULL DEFAULT 0,
             transacted_at TEXT,
+            category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+            rule_id INTEGER REFERENCES categorization_rules(id) ON DELETE SET NULL,
+            is_manual_category INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (account_id, transaction_id)
         )
     """)
+    # Create categorization tables before adding their foreign-key columns to
+    # an existing transactions table.
+    connection.execute("""CREATE TABLE IF NOT EXISTS categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )""")
+    connection.execute("""CREATE TABLE IF NOT EXISTS categorization_rules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+        priority INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        conditions TEXT NOT NULL CHECK (json_valid(conditions)),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )""")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_rules_priority ON categorization_rules(is_active, priority, id)")
+    transaction_columns = {row[1] for row in connection.execute("PRAGMA table_info(transactions)")}
+    for column, definition in (
+        ("category_id", "INTEGER REFERENCES categories(id) ON DELETE SET NULL"),
+        ("rule_id", "INTEGER REFERENCES categorization_rules(id) ON DELETE SET NULL"),
+        ("is_manual_category", "INTEGER NOT NULL DEFAULT 0"),
+    ):
+        if column not in transaction_columns:
+            connection.execute(f"ALTER TABLE transactions ADD COLUMN {column} {definition}")
     columns = {row[1] for row in connection.execute("PRAGMA table_info(balance_snapshots)")}
     if "source" not in columns:
         # Existing rows came from the manually maintained Balances sheet.
@@ -263,6 +291,9 @@ def insert_simplefin_transactions(
                  transacted_at=excluded.transacted_at""",
             transaction_rows,
         )
+        from budget.categorizer import categorize_unassigned
+
+        categorize_unassigned(connection)
         connection.commit()
     finally:
         connection.close()
@@ -275,12 +306,13 @@ def get_transactions(*, db_path: str | os.PathLike[str] | None = None) -> pd.Dat
     try:
         rows = connection.execute(
             """SELECT t.posted_date, a.name, t.amount, t.description, t.pending,
-                      t.transaction_id, t.transacted_at
+                      t.transaction_id, t.transacted_at, c.name
                FROM transactions t JOIN accounts a ON a.id = t.account_id
+               LEFT JOIN categories c ON c.id = t.category_id
                ORDER BY t.posted_date, a.name, t.transaction_id"""
         ).fetchall()
     finally:
         connection.close()
     return pd.DataFrame(rows, columns=[
-        "Date", "Account", "Amount", "Description", "Pending", "Transaction ID", "Transacted At"
+        "Date", "Account", "Amount", "Description", "Pending", "Transaction ID", "Transacted At", "Category"
     ])

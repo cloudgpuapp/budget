@@ -448,6 +448,9 @@ def transactions():
     category_id = request.args.get("category_id", "").strip()
     pending = request.args.get("pending", "").strip()
     query = request.args.get("q", "").strip()
+    selected_month = request.args.get("month", "").strip()
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
     clauses, values = [], []
     if account_id:
         clauses.append("t.account_id = ?")
@@ -483,15 +486,59 @@ def transactions():
         ).fetchall()
         accounts = connection.execute("SELECT id, name FROM accounts ORDER BY name COLLATE NOCASE").fetchall()
         categories = connection.execute("SELECT id, name FROM categories ORDER BY name COLLATE NOCASE").fetchall()
+        months = [row[0] for row in connection.execute(
+            "SELECT DISTINCT substr(COALESCE(posted_date, transacted_at), 1, 7) "
+            "FROM transactions WHERE COALESCE(posted_date, transacted_at) IS NOT NULL "
+            "ORDER BY 1 DESC"
+        ).fetchall()]
+        # A date range takes precedence when either date is supplied.
+        date_clauses = ["t.amount < 0"]
+        date_values = []
+        has_date_range = bool(start_date or end_date)
+        if start_date:
+            date_clauses.append("COALESCE(t.posted_date, t.transacted_at) >= ?")
+            date_values.append(start_date)
+        if end_date:
+            date_clauses.append("COALESCE(t.posted_date, t.transacted_at) <= ?")
+            date_values.append(end_date)
+        elif selected_month and not has_date_range:
+            date_clauses.append("substr(COALESCE(t.posted_date, t.transacted_at), 1, 7) = ?")
+            date_values.append(selected_month)
+        if has_date_range:
+            selected_month = ""
+        spend_rows = connection.execute(
+            "SELECT COALESCE(c.name, 'Uncategorized'), SUM(-t.amount) "
+            "FROM transactions t LEFT JOIN categories c ON c.id=t.category_id WHERE " +
+            " AND ".join(date_clauses) + " GROUP BY t.category_id, c.name ORDER BY 1 COLLATE NOCASE",
+            date_values,
+        ).fetchall()
     finally:
         connection.close()
     transactions_data = [dict(zip(("account_id", "transaction_id", "date", "account", "description",
                                    "pending", "amount", "category_id", "category", "manual"), row))
                          for row in rows]
-    filters = {"account_id": account_id, "category_id": category_id, "pending": pending, "q": query}
+    filters = {"account_id": account_id, "category_id": category_id, "pending": pending, "q": query,
+               "month": selected_month, "start_date": start_date, "end_date": end_date}
+    spend_total = sum(amount for _, amount in spend_rows)
+    palette = ["#4778a8", "#e08b45", "#65a36e", "#b65d5d", "#8a70ad", "#c5a537", "#4b9b9a", "#ce719b", "#7d8791", "#9b704d"]
+    spend_breakdown = []
+    gradient_stops = []
+    position = 0.0
+    for index, (name, amount) in enumerate(spend_rows):
+        percent = amount / spend_total * 100 if spend_total else 0
+        color = palette[index % len(palette)]
+        spend_breakdown.append({"name": name, "amount": amount, "percent": percent, "color": color})
+        if percent > 0:
+            next_position = position + percent * 3.6
+            gradient_stops.append(f"{color} {position:.2f}deg {next_position:.2f}deg")
+            position = next_position
+    pie_gradient = ", ".join(gradient_stops) or "#e5e7eb 0deg 360deg"
     return render_template("transactions.html", transactions=transactions_data, accounts=accounts,
                            categories=categories, filters=filters, page=page,
-                           pages=max(1, (total + per_page - 1) // per_page), total=total)
+                           pages=max(1, (total + per_page - 1) // per_page), total=total,
+                           months=months, selected_month=selected_month, start_date=start_date,
+                           end_date=end_date, spend_breakdown=spend_breakdown,
+                           spend_total=spend_total, pie_gradient=pie_gradient)
 
 
 @app.post("/transactions/<account_id>/<transaction_id>/category")

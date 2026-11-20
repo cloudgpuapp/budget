@@ -54,5 +54,5 @@ def test_snapshot_saves_fetched_accounts(monkeypatch, capsys):
     ):
         main()
 
-    insert.assert_called_once_with(accounts)
+    insert.assert_called_once_with(accounts, source="simplefin")
     assert "Saved balance snapshot for 1 account(s)." in capsys.readouterr().out

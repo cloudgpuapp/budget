@@ -38,6 +38,12 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
             PRIMARY KEY (account, date)
         )
     """)
+    connection.execute("""
+        CREATE TABLE IF NOT EXISTS simplefin_request_counts (
+            request_date TEXT PRIMARY KEY,
+            request_count INTEGER NOT NULL
+        )
+    """)
     columns = {row[1] for row in connection.execute("PRAGMA table_info(balance_snapshots)")}
     if "source" not in columns:
         # Existing rows came from the manually maintained Balances sheet.
@@ -46,6 +52,34 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
         )
     connection.execute("PRAGMA user_version = 2")
     return connection
+
+
+def reserve_simplefin_request(
+    *, limit: int = 24, db_path: str | os.PathLike[str] | None = None
+) -> bool:
+    """Atomically reserve one SimpleFIN request for today, up to ``limit``."""
+    today = date.today().isoformat()
+    connection = _connect(db_path)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        row = connection.execute(
+            "SELECT request_count FROM simplefin_request_counts WHERE request_date = ?",
+            (today,),
+        ).fetchone()
+        count = row[0] if row else 0
+        if count >= limit:
+            connection.rollback()
+            return False
+        connection.execute(
+            """INSERT INTO simplefin_request_counts (request_date, request_count)
+               VALUES (?, 1) ON CONFLICT(request_date) DO UPDATE SET
+               request_count = request_count + 1""",
+            (today,),
+        )
+        connection.commit()
+        return True
+    finally:
+        connection.close()
 
 
 def _as_date(value: date | datetime | str) -> str:

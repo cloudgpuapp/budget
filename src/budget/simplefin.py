@@ -11,12 +11,15 @@ import base64
 import binascii
 import logging
 import os
+import re
 from collections.abc import Mapping
+from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import requests
 
+from budget.balances_db import reserve_simplefin_request
 from budget.config import get_env, load_toml
 
 _FETCH_TIMEOUT = int(os.environ.get("BUDGET_FETCH_TIMEOUT", 15))
@@ -33,7 +36,9 @@ def _request_error(action: str, exc: Exception) -> SimpleFINError:
             f"SimpleFIN {action} request timed out.\nIf your VPN is on, turn it off and try again."
         )
     if isinstance(exc, requests.HTTPError):
-        return SimpleFINError(f"SimpleFIN {action} request returned an HTTP error")
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        suffix = f" (HTTP {status})" if status is not None else ""
+        return SimpleFINError(f"SimpleFIN {action} request returned an HTTP error{suffix}")
     return SimpleFINError(f"SimpleFIN {action} request failed")
 
 
@@ -42,17 +47,19 @@ def claim_setup_token(setup_token: str) -> str:
     try:
         claim_url = base64.b64decode(setup_token, validate=True).decode("utf-8").strip()
         parsed = urlsplit(claim_url)
-        if parsed.scheme not in ("http", "https") or not parsed.netloc:
-            raise ValueError("not an HTTP URL")
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError("not an HTTPS URL")
     except (ValueError, UnicodeDecodeError, binascii.Error, TypeError):
         raise SimpleFINError("Invalid SimpleFIN setup token") from None
 
     try:
-        response = requests.post(claim_url, timeout=_FETCH_TIMEOUT)
+        response = requests.post(
+            claim_url, timeout=_FETCH_TIMEOUT, allow_redirects=False
+        )
         response.raise_for_status()
         access_url = response.text.strip()
         access_parts = urlsplit(access_url)
-        if access_parts.scheme not in ("http", "https") or not access_parts.netloc:
+        if access_parts.scheme != "https" or not access_parts.netloc:
             raise SimpleFINError("SimpleFIN returned an invalid access URL")
         return access_url
     except SimpleFINError:
@@ -78,8 +85,10 @@ def get_accounts(
         account_names = load_toml().get("simplefin", {}).get("accounts", {})
     try:
         parts = urlsplit(access_url)
-        if parts.scheme not in ("http", "https") or not parts.hostname:
+        if parts.scheme != "https" or not parts.hostname:
             raise ValueError("invalid access URL")
+        if not reserve_simplefin_request(limit=24):
+            raise SimpleFINError("SimpleFIN daily request limit reached (24 requests)")
         endpoint = urlunsplit(
             (parts.scheme, parts.netloc, parts.path.rstrip("/") + "/accounts", "", "")
         )
@@ -87,12 +96,22 @@ def get_accounts(
             endpoint,
             params={"balances-only": 1},
             timeout=_FETCH_TIMEOUT,
+            allow_redirects=False,
         )
         response.raise_for_status()
         payload = response.json()
         accounts = payload["accounts"]
         if not isinstance(accounts, list):
             raise TypeError("accounts is not a list")
+        errors = payload.get("errlist", [])
+        if errors:
+            safe_errors = [
+                re.sub(r"https?://\S+", "[redacted URL]", str(error)).replace(
+                    access_url, "[redacted]"
+                )
+                for error in errors
+            ]
+            raise SimpleFINError("SimpleFIN reported account errors: " + "; ".join(safe_errors))
         normalized = []
         for account in accounts:
             account_id = account["id"]
@@ -100,12 +119,29 @@ def get_accounts(
             if display_name is None:
                 logger.warning("Skipping unmapped SimpleFIN account id %s", account_id)
                 continue
+            balance_date = account.get("balance-date")
+            if balance_date is not None:
+                try:
+                    balance_date = datetime.fromtimestamp(
+                        float(balance_date), UTC
+                    ).date().isoformat()
+                except (TypeError, ValueError, OverflowError, OSError):
+                    balance_date = None
+            if balance_date is None:
+                logger.warning("SimpleFIN account %s has no valid balance date", account_id)
+            elif (date.today() - date.fromisoformat(balance_date)).days > 1:
+                logger.warning(
+                    "SimpleFIN account %s balance is stale (as of %s)",
+                    account_id,
+                    balance_date,
+                )
             normalized.append(
                 {
                     "id": account_id,
                     "name": display_name,
                     "balance": account["balance"],
                     "balance_timestamp": account.get("balance-date"),
+                    "date": balance_date,
                 }
             )
         return normalized

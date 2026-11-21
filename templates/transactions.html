@@ -13,7 +13,7 @@ body{font:16px system-ui;max-width:1300px;margin:2rem auto;padding:0 1rem;color:
 .cat-menu label:hover{background:#f4f5f7}
 .cat-menu input{margin:0;padding:0}
 .cat-select-all{border-bottom:1px solid #ddd;font-weight:600;margin-bottom:.2rem}
-table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.6rem;border-bottom:1px solid #ddd;vertical-align:top}th{white-space:nowrap}.amount{text-align:right;white-space:nowrap}.pending,.manual{font-size:.75rem;border-radius:1rem;background:#fff1c2;padding:.15rem .5rem;color:#654b00;white-space:nowrap}.manual{background:#e8eef8;color:#345}.description{min-width:18rem}.actions{white-space:nowrap}.pagination{display:flex;justify-content:space-between;margin:1rem 0}.muted{color:#666;font-size:.9rem}.spend{display:grid;grid-template-columns:220px 1fr;gap:1.5rem;align-items:center;padding:1rem;background:#f8f9fa;border-radius:.5rem}.pie{width:200px;height:200px;border-radius:50%;background:conic-gradient({{ pie_gradient }});margin:auto}.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.5rem 1rem;list-style:none;padding:0}.legend li{display:flex;gap:.5rem;align-items:center}.swatch{width:.8rem;height:.8rem;border-radius:2px;flex:none}@media(max-width:600px){.spend{grid-template-columns:1fr}.pie{width:170px;height:170px}}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.6rem;border-bottom:1px solid #ddd;vertical-align:top}th{white-space:nowrap}.amount{text-align:right;white-space:nowrap}.pending,.manual{font-size:.75rem;border-radius:1rem;background:#fff1c2;padding:.15rem .5rem;color:#654b00;white-space:nowrap}.manual{background:#e8eef8;color:#345}.description{min-width:18rem}.actions{white-space:nowrap}.pagination{display:flex;justify-content:space-between;margin:1rem 0}.muted{color:#666;font-size:.9rem}.spend{display:grid;grid-template-columns:220px 1fr;gap:1.5rem;align-items:center;padding:1rem;background:#f8f9fa;border-radius:.5rem}.pie{display:block;width:200px;height:200px;margin:auto}.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.5rem 1rem;list-style:none;padding:0}.legend li{display:flex;gap:.5rem;align-items:center}.swatch{width:.8rem;height:.8rem;border-radius:2px;flex:none}@media(max-width:600px){.spend{grid-template-columns:1fr}.pie{width:170px;height:170px}}
 </style></head><body>
 <a href="/">Budget</a> · <a href="/rules">Categories &amp; Rules</a> · <a href="/balances">Balances</a>
 <h1>Transactions</h1>
@@ -40,49 +40,19 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.6rem;bo
 </span>
 <button>Update chart</button>
 </form>
-<section class="spend" aria-label="Spending by category chart">
-<div class="pie" role="img" aria-label="Pie chart of {{ '%.2f'|format(spend_total) }} dollars spent by category"></div>
-<div><strong>Total spend: ${{ '{:,.2f}'.format(spend_total) }}</strong>
+<section class="spend" aria-label="Spending by category chart" data-spend-url="{{ url_for('transaction_spend') }}">
+<canvas class="pie" role="img" aria-label="Pie chart of {{ '%.2f'|format(spend_total) }} dollars spent by category"></canvas>
+<div><strong class="spend-total">Total spend: ${{ '{:,.2f}'.format(spend_total) }}</strong>
 {% if spend_breakdown %}<ul class="legend">{% for item in spend_breakdown %}<li><span class="swatch" style="background:{{ item.color }}"></span><span>{{ item.name }}: ${{ '{:,.2f}'.format(item.amount) }} ({{ '%.1f'|format(item.percent) }}%)</span></li>{% endfor %}</ul>{% else %}<p class="muted">No spending found for this period.</p>{% endif %}</div>
 </section>
 <p class="muted">{{ total }} transaction{{ '' if total == 1 else 's' }}</p>
 <table><thead><tr><th>Date</th><th>Account</th><th>Description</th><th class="amount">Amount</th><th>Category</th><th>Actions</th></tr></thead><tbody>
 {% for row in transactions %}<tr><td>{{ row.date or '' }}</td><td>{{ row.account }}</td><td class="description">{{ row.description }} {% if row.pending %}<span class="pending">Pending</span>{% endif %}</td>
 <td class="amount">{{ '-${:,.2f}'.format(-row.amount) if row.amount < 0 else '+${:,.2f}'.format(row.amount) }}</td>
-<td><form method="post" action="{{ url_for('update_transaction_category', account_id=row.account_id, transaction_id=row.transaction_id) }}"><input type="hidden" name="return_to" value="{{ request.full_path if request.query_string else request.path }}"><select name="category_id" aria-label="Category for {{ row.description }}" onchange="this.form.submit()"><option value="">Uncategorized</option>{% for id,name in categories %}<option value="{{ id }}" {% if row.category_id == id %}selected{% endif %}>{{ name }}</option>{% endfor %}</select>{% if row.manual %} <span class="manual" title="Manually categorized">Manual</span>{% endif %}</form></td>
-<td class="actions"><a href="{{ url_for('rules', description=row.description, category_id=row.category_id or '') }}">+ Rule</a>{% if row.manual %}<form method="post" action="{{ url_for('update_transaction_category', account_id=row.account_id, transaction_id=row.transaction_id) }}" style="display:inline"><input type="hidden" name="category_id" value=""><input type="hidden" name="return_to" value="{{ request.full_path if request.query_string else request.path }}"><button>Reset to Auto</button></form>{% endif %}</td></tr>
+<td><form class="category-form" method="post" action="{{ url_for('update_transaction_category', account_id=row.account_id, transaction_id=row.transaction_id) }}"><input type="hidden" name="return_to" value="{{ request.full_path if request.query_string else request.path }}"><select name="category_id" aria-label="Category for {{ row.description }}"><option value="">Uncategorized</option>{% for id,name in categories %}<option value="{{ id }}" {% if row.category_id == id %}selected{% endif %}>{{ name }}</option>{% endfor %}</select><button type="submit">Save</button>{% if row.manual %} <span class="manual" title="Manually categorized">Manual</span>{% endif %}</form></td>
+<td class="actions"><a href="{{ url_for('rules', description=row.description, category_id=row.category_id or '') }}">+ Rule</a><form class="reset-form" method="post" action="{{ url_for('update_transaction_category', account_id=row.account_id, transaction_id=row.transaction_id) }}" style="display:inline;{% if not row.manual %}display:none{% endif %}"><input type="hidden" name="category_id" value=""><input type="hidden" name="return_to" value="{{ request.full_path if request.query_string else request.path }}"><button>Reset to Auto</button></form></td></tr>
 {% else %}<tr><td colspan="6">No transactions match these filters.</td></tr>{% endfor %}
 </tbody></table>
 <nav class="pagination">{% if page > 1 %}<a href="{{ url_for('transactions', page=page-1, **filters) }}">← Previous</a>{% else %}<span></span>{% endif %}<span>Page {{ page }} of {{ pages }}</span>{% if page < pages %}<a href="{{ url_for('transactions', page=page+1, **filters) }}">Next →</a>{% endif %}</nav>
-<script>
-(() => {
-  const dd = document.getElementById('catDropdown');
-  const sum = document.getElementById('catSummary');
-  const all = document.getElementById('catSelectAll');
-  const cbs = Array.from(dd.querySelectorAll('.cat-cb'));
-
-  function sync() {
-    const checked = cbs.filter(cb => cb.checked);
-    if (checked.length === 0) {
-      sum.textContent = 'None selected';
-    } else if (checked.length === cbs.length) {
-      sum.textContent = `All (${checked.length})`;
-    } else if (checked.length === 1) {
-      sum.textContent = checked[0].parentElement.textContent.trim();
-    } else {
-      sum.textContent = `${checked.length} selected`;
-    }
-    all.checked = cbs.length > 0 && checked.length === cbs.length;
-    all.indeterminate = checked.length > 0 && checked.length < cbs.length;
-  }
-
-  all.addEventListener('change', () => {
-    cbs.forEach(cb => cb.checked = all.checked);
-    sync();
-  });
-  cbs.forEach(cb => cb.addEventListener('change', sync));
-  document.addEventListener('click', e => { if (!dd.contains(e.target)) dd.removeAttribute('open'); });
-  sync();
-})();
-</script>
+<script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body></html>

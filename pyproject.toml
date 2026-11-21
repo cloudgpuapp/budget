@@ -23,7 +23,6 @@ dependencies = [
     "gunicorn",
     "pandas",
     "numpy",
-    "matplotlib",
     "requests",
 ]
 

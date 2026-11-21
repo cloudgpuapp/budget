@@ -34,12 +34,9 @@ Create a `.env` file in the working directory (or export these variables in your
 GOOGLE_SERVICE_ACCOUNT_KEY=/absolute/path/to/service-account.json
 SPREADSHEET_ID=your_google_spreadsheet_id
 BUDGET_CONFIG=/absolute/path/to/config.toml
-BUDGET_OWNERS=Name1,Name2
 ```
 
 `SPREADSHEET_ID` is the ID in the spreadsheet URL between `/d/` and `/edit`. The CLI loads `.env` automatically. For the web app, run it from the project directory so the same `.env` file is found.
-
-`BUDGET_OWNERS` is optional. Set it to a comma-separated list of account owner name prefixes to enable owner plots (for example, `BUDGET_OWNERS=Name1,Name2`). When unset or empty, the app does not look for owner names or create owner plots. Accounts that do not start with a configured name are omitted from those plots.
 
 ## Usage
 
@@ -86,6 +83,8 @@ Open <http://127.0.0.1:5000>. The Budget Overview aggregates dated, non-pending 
 
 The dashboard has no authentication and displays financial data. Keep it on a trusted machine or network; do not expose the development server directly to the public internet. For a production deployment, use a production WSGI server such as Gunicorn behind an appropriately secured web server.
 
+The interactive dashboard code is written in TypeScript. Build the committed static bundle on a development machine with Node.js by running `npm install` and `npm run build`; deploys copy `static/`, so Node.js is not needed on the Pi.
+
 ### Configuration and environment
 
 | Setting | Purpose | Default |
@@ -97,6 +96,5 @@ The dashboard has no authentication and displays financial data. Keep it on a tr
 | `BUDGET_FETCH_WORKERS` | Legacy Sheets dashboard parallel fetch workers | `6` |
 | `BUDGET_RESULT_TIMEOUT` | Legacy Sheets dashboard timeout per sheet future | `20` |
 | `BUDGET_FETCH_TIMEOUT` | Sheets API request timeout, in seconds | `15` |
-| `BUDGET_OWNERS` | Optional comma-separated account owner prefixes for owner plots | unset |
 
 See [Security](docs/SECURITY.md) for credential and deployment guidance.

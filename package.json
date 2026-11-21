@@ -1,0 +1,11 @@
+{
+  "name": "budget-frontend",
+  "private": true,
+  "scripts": {
+    "build": "tsc --noEmit && esbuild frontend/app.ts --bundle --format=esm --target=es2020 --outfile=static/js/app.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

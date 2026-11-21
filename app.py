@@ -19,7 +19,7 @@ import time
 from urllib.parse import quote, unquote
 
 from dotenv import load_dotenv
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
 from budget.analyze import build_budget
 from budget.balances_db import _connect, get_balance_history, get_transactions
@@ -247,7 +247,6 @@ def balances():
         source_filter = "all"
     error = None
     accounts = []
-    trend = []
     net_worth = None
     latest_date = None
     try:
@@ -269,19 +268,6 @@ def balances():
                     }
                 )
 
-            trend = []
-            dates = sorted(history["Date"].unique())
-            account_histories = {
-                account: rows.sort_values("Date")
-                for account, rows in history.groupby("Account", sort=True)
-            }
-            for day in dates:
-                total = 0.0
-                for rows in account_histories.values():
-                    available = rows[rows["Date"] <= day]
-                    if not available.empty:
-                        total += float(available.iloc[-1]["Amount"])
-                trend.append({"date": day, "amount": total})
             net_worth = sum(account["amount"] for account in accounts)
     except Exception as e:
         logger.exception("Failed to load balances from SQLite")
@@ -290,12 +276,36 @@ def balances():
     return render_template(
         "balances.html",
         accounts=accounts,
-        trend=trend,
         net_worth=net_worth,
         latest_date=latest_date,
         source_filter=source_filter,
         error=error,
     )
+
+
+@app.get("/api/balances/trend")
+def balances_trend():
+    source_filter = request.args.get("source", "all").lower()
+    if source_filter not in {"all", "manual", "simplefin"}:
+        source_filter = "all"
+    history = get_balance_history()
+    if "Source" in history.columns and source_filter != "all":
+        history = history[history["Source"] == source_filter]
+    points = []
+    if not history.empty:
+        history["Date"] = history["Date"].astype(str)
+        account_histories = {
+            account: rows.sort_values("Date")
+            for account, rows in history.groupby("Account", sort=True)
+        }
+        for day in sorted(history["Date"].unique()):
+            amount = sum(
+                float(available.iloc[-1]["Amount"])
+                for rows in account_histories.values()
+                if not (available := rows[rows["Date"] <= day]).empty
+            )
+            points.append({"date": day, "amount": amount})
+    return jsonify(points)
 
 
 @app.route("/rules", methods=["GET"])
@@ -660,19 +670,12 @@ def transactions():
         "#9b704d",
     ]
     spend_breakdown = []
-    gradient_stops = []
-    position = 0.0
     for index, (name, amount) in enumerate(spend_rows):
         percent = amount / spend_total * 100 if spend_total else 0
         color = palette[index % len(palette)]
         spend_breakdown.append(
             {"name": name, "amount": amount, "percent": percent, "color": color}
         )
-        if percent > 0:
-            next_position = position + percent * 3.6
-            gradient_stops.append(f"{color} {position:.2f}deg {next_position:.2f}deg")
-            position = next_position
-    pie_gradient = ", ".join(gradient_stops) or "#e5e7eb 0deg 360deg"
     return render_template(
         "transactions.html",
         transactions=transactions_data,
@@ -688,8 +691,57 @@ def transactions():
         end_date=end_date,
         spend_breakdown=spend_breakdown,
         spend_total=spend_total,
-        pie_gradient=pie_gradient,
     )
+
+
+@app.get("/api/transactions/spend")
+def transaction_spend():
+    month = request.args.get("month", "").strip()
+    start_date = request.args.get("start_date", "").strip()
+    end_date = request.args.get("end_date", "").strip()
+    clauses, values = [], []
+    if start_date:
+        clauses.append("COALESCE(t.posted_date, t.transacted_at) >= ?")
+        values.append(start_date)
+    if end_date:
+        clauses.append("COALESCE(t.posted_date, t.transacted_at) <= ?")
+        values.append(end_date)
+    elif month and not (start_date or end_date):
+        clauses.append("substr(COALESCE(t.posted_date, t.transacted_at), 1, 7) = ?")
+        values.append(month)
+    selected = request.args.getlist("spend_category_id")
+    category_ids = []
+    category_clauses = []
+    for value in selected:
+        if value == "uncategorized":
+            category_clauses.append("t.category_id IS NULL")
+        else:
+            try:
+                category_ids.append(int(value))
+            except ValueError:
+                continue
+    if category_ids:
+        category_clauses.append("t.category_id IN (" + ",".join("?" for _ in category_ids) + ")")
+        values.extend(category_ids)
+    if category_clauses:
+        clauses.append("(" + " OR ".join(category_clauses) + ")")
+    connection = _connect()
+    try:
+        rows = connection.execute(
+            "SELECT COALESCE(c.name, 'Uncategorized'), SUM(-t.amount) "
+            "FROM transactions t LEFT JOIN categories c ON c.id=t.category_id "
+            "WHERE t.amount < 0" + (" AND " + " AND ".join(clauses) if clauses else "") +
+            " GROUP BY t.category_id, c.name ORDER BY 1 COLLATE NOCASE", values
+        ).fetchall()
+    finally:
+        connection.close()
+    palette = ["#4778a8", "#e08b45", "#65a36e", "#b65d5d", "#8a70ad", "#c5a537", "#4b9b9a", "#ce719b", "#7d8791", "#9b704d"]
+    total = sum(float(amount) for _, amount in rows)
+    breakdown = [
+        {"name": name, "amount": float(amount), "percent": float(amount) / total * 100 if total else 0, "color": palette[index % len(palette)]}
+        for index, (name, amount) in enumerate(rows)
+    ]
+    return jsonify({"total": total, "breakdown": breakdown})
 
 
 @app.post("/transactions/<account_id>/<transaction_id>/category")
@@ -702,6 +754,8 @@ def update_transaction_category(account_id, transaction_id):
             (account_id, transaction_id),
         ).fetchone()
         if exists is None:
+            if request.is_json or request.headers.get("X-Requested-With") == "fetch":
+                return jsonify({"error": "Transaction not found."}), 404
             flash("Transaction not found.", "error")
         elif raw_category_id:
             try:
@@ -714,6 +768,8 @@ def update_transaction_category(account_id, transaction_id):
                     "SELECT 1 FROM categories WHERE id=?", (category_id,)
                 ).fetchone()
             ):
+                if request.is_json or request.headers.get("X-Requested-With") == "fetch":
+                    return jsonify({"error": "Choose a valid category."}), 400
                 flash("Choose a valid category.", "error")
             else:
                 connection.execute(
@@ -741,8 +797,16 @@ def update_transaction_category(account_id, transaction_id):
                 (category_id, rule_id, account_id, transaction_id),
             )
         connection.commit()
+        updated = connection.execute(
+            "SELECT t.category_id, c.name, t.is_manual_category FROM transactions t "
+            "LEFT JOIN categories c ON c.id=t.category_id "
+            "WHERE t.account_id=? AND t.transaction_id=?",
+            (account_id, transaction_id),
+        ).fetchone()
     finally:
         connection.close()
+    if request.is_json or request.headers.get("X-Requested-With") == "fetch":
+        return jsonify({"category_id": updated[0], "category": updated[1], "manual": bool(updated[2])})
     return_to = request.form.get("return_to", "")
     if not return_to.startswith("/") or return_to.startswith("//"):
         return_to = url_for("transactions")

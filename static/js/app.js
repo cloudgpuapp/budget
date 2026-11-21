@@ -28,6 +28,39 @@ function drawPie(canvas, categories) {
     context.fillStyle = "#e5e7eb";
     context.fill();
   }
+  let tooltip = canvas.parentElement?.querySelector(".pie-tooltip");
+  if (!tooltip && canvas.parentElement) {
+    tooltip = document.createElement("div");
+    tooltip.className = "pie-tooltip";
+    tooltip.setAttribute("role", "tooltip");
+    tooltip.hidden = true;
+    canvas.parentElement.append(tooltip);
+  }
+  canvas.onmousemove = (event) => {
+    if (!tooltip || !categories.length || !total) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left - rect.width / 2;
+    const y = event.clientY - rect.top - rect.height / 2;
+    if (Math.hypot(x, y) > size / 2) {
+      tooltip.hidden = true;
+      return;
+    }
+    let pointerAngle = Math.atan2(y, x) + Math.PI / 2;
+    if (pointerAngle < 0) pointerAngle += Math.PI * 2;
+    let sliceEnd = 0;
+    const category = categories.find((item) => {
+      sliceEnd += item.amount / total * Math.PI * 2;
+      return pointerAngle < sliceEnd;
+    });
+    if (!category) return;
+    tooltip.textContent = category.name;
+    tooltip.hidden = false;
+    tooltip.style.left = `${event.clientX + 12}px`;
+    tooltip.style.top = `${event.clientY + 12}px`;
+  };
+  canvas.onmouseleave = () => {
+    if (tooltip) tooltip.hidden = true;
+  };
 }
 async function refreshSpend(section) {
   const form = document.querySelector('form.filters input[name="month"]')?.form;

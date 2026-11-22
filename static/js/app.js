@@ -63,7 +63,7 @@ function drawPie(canvas, categories) {
   };
 }
 async function refreshSpend(section) {
-  const form = document.querySelector('form.filters input[name="month"]')?.form;
+  const form = document.querySelector("form.filters");
   const canvas = section.querySelector("canvas");
   if (!form || !canvas) return;
   const url = new URL(section.dataset.spendUrl ?? "", window.location.href);
@@ -110,7 +110,7 @@ function initCategoryDropdown() {
   const checkboxes = Array.from(dropdown.querySelectorAll(".cat-cb"));
   const sync = () => {
     const checked = checkboxes.filter((checkbox) => checkbox.checked);
-    summary.textContent = checked.length === 0 ? "None selected" : checked.length === checkboxes.length ? `All (${checked.length})` : checked.length === 1 ? checked[0].parentElement.textContent.trim() : `${checked.length} selected`;
+    summary.textContent = checked.length === 0 ? "All categories" : checked.length === checkboxes.length ? `All (${checked.length})` : checked.length === 1 ? checked[0].parentElement.textContent.trim() : `${checked.length} selected`;
     selectAll.checked = checkboxes.length > 0 && checked.length === checkboxes.length;
     selectAll.indeterminate = checked.length > 0 && checked.length < checkboxes.length;
   };
@@ -125,6 +125,24 @@ function initCategoryDropdown() {
     if (!dropdown.contains(event.target)) dropdown.removeAttribute("open");
   });
   sync();
+}
+function initDateFilters() {
+  const form = document.querySelector("form.filters");
+  const month = form?.querySelector('select[name="month"]');
+  const start = form?.querySelector('input[name="start_date"]');
+  const end = form?.querySelector('input[name="end_date"]');
+  if (!month || !start || !end) return;
+  month.addEventListener("change", () => {
+    if (month.value) {
+      start.value = "";
+      end.value = "";
+    }
+  });
+  const clearMonth = () => {
+    if (start.value || end.value) month.value = "";
+  };
+  start.addEventListener("change", clearMonth);
+  end.addEventListener("change", clearMonth);
 }
 function initCategoryEditing() {
   document.querySelectorAll(".category-form, .reset-form").forEach((form) => {
@@ -226,6 +244,7 @@ function initTrend() {
   });
 }
 initCategoryDropdown();
+initDateFilters();
 initCategoryEditing();
 initTrend();
 var pie = document.querySelector(".spend canvas");

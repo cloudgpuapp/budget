@@ -558,14 +558,10 @@ def transactions():
     except ValueError:
         page = 1
     account_id = request.args.get("account_id", "").strip()
-    category_id = request.args.get("category_id", "").strip()
+    category_ids = [value.strip() for value in request.args.getlist("category_id") if value.strip()]
+    owner = request.args.get("owner", "").strip()
     pending = request.args.get("pending", "").strip()
     query = request.args.get("q", "").strip()
-    spend_category_ids = [
-        value.strip()
-        for value in request.args.getlist("spend_category_id")
-        if value.strip()
-    ]
     selected_month = request.args.get("month", "").strip()
     start_date = request.args.get("start_date", "").strip()
     end_date = request.args.get("end_date", "").strip()
@@ -573,15 +569,24 @@ def transactions():
     if account_id:
         clauses.append("t.account_id = ?")
         values.append(account_id)
-    if category_id == "uncategorized":
-        clauses.append("t.category_id IS NULL")
-    elif category_id:
+    selected_category_ids = []
+    category_filter_clauses = []
+    if "uncategorized" in category_ids:
+        category_filter_clauses.append("t.category_id IS NULL")
+    for category_value in category_ids:
         try:
-            selected_id = int(category_id)
-            values.extend([selected_id, selected_id])
-            clauses.append("t.category_id IN (SELECT id FROM categories WHERE id=? OR parent_id=?)")
+            selected_category_ids.append(int(category_value))
         except ValueError:
-            category_id = ""
+            continue
+    if selected_category_ids:
+        placeholders = ",".join("?" for _ in selected_category_ids)
+        category_filter_clauses.append("t.category_id IN (SELECT id FROM categories WHERE id IN (" + placeholders + ") OR parent_id IN (" + placeholders + "))")
+        values.extend(selected_category_ids * 2)
+    if category_filter_clauses:
+        clauses.append("(" + " OR ".join(category_filter_clauses) + ")")
+    if owner:
+        clauses.append("ao.owner = ?")
+        values.append(owner)
     if pending in ("0", "1"):
         clauses.append("t.pending = ?")
         values.append(int(pending))
@@ -590,18 +595,33 @@ def transactions():
     if query:
         clauses.append("INSTR(LOWER(t.description), LOWER(?)) > 0")
         values.append(query)
+    # A date range takes precedence when either bound is supplied.
+    date_clauses = []
+    has_date_range = bool(start_date or end_date)
+    if start_date:
+        date_clauses.append("COALESCE(t.posted_date, t.transacted_at) >= ?")
+        values.append(start_date)
+    if end_date:
+        date_clauses.append("COALESCE(t.posted_date, t.transacted_at) <= ?")
+        values.append(end_date)
+    elif selected_month and not has_date_range:
+        date_clauses.append("substr(COALESCE(t.posted_date, t.transacted_at), 1, 7) = ?")
+        values.append(selected_month)
+    clauses.extend(date_clauses)
+    if has_date_range:
+        selected_month = ""
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     connection = _connect()
     try:
         total = connection.execute(
-            "SELECT COUNT(*) FROM transactions t" + where, values
+            "SELECT COUNT(*) FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN account_owners ao ON ao.account_id=a.id" + where, values
         ).fetchone()[0]
         rows = connection.execute(
             """SELECT t.account_id, t.transaction_id, COALESCE(t.posted_date, t.transacted_at),
                       a.name, t.description, t.pending, t.amount, t.category_id,
                       CASE WHEN parent.id IS NULL THEN c.name ELSE parent.name || ' › ' || c.name END,
                       t.is_manual_category
-               FROM transactions t JOIN accounts a ON a.id=t.account_id
+               FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN account_owners ao ON ao.account_id=a.id
                LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN categories parent ON parent.id=c.parent_id"""
             + where
             + " ORDER BY COALESCE(t.posted_date, t.transacted_at) DESC, t.rowid DESC LIMIT ? OFFSET ?",
@@ -610,6 +630,7 @@ def transactions():
         accounts = connection.execute(
             "SELECT id, name FROM accounts ORDER BY name COLLATE NOCASE"
         ).fetchall()
+        owners = [row[0] for row in connection.execute("SELECT DISTINCT owner FROM account_owners ORDER BY owner COLLATE NOCASE").fetchall()]
         categories = _category_options(connection)
         months = [
             row[0]
@@ -619,52 +640,16 @@ def transactions():
                 "ORDER BY 1 DESC"
             ).fetchall()
         ]
-        # A date range takes precedence when either date is supplied.
-        date_clauses = []
-        date_values = []
-        has_date_range = bool(start_date or end_date)
-        if start_date:
-            date_clauses.append("COALESCE(t.posted_date, t.transacted_at) >= ?")
-            date_values.append(start_date)
-        if end_date:
-            date_clauses.append("COALESCE(t.posted_date, t.transacted_at) <= ?")
-            date_values.append(end_date)
-        elif selected_month and not has_date_range:
-            date_clauses.append(
-                "substr(COALESCE(t.posted_date, t.transacted_at), 1, 7) = ?"
-            )
-            date_values.append(selected_month)
-        if has_date_range:
-            selected_month = ""
-        chart_category_clauses = []
-        chart_category_values = []
-        chart_category_ids = []
-        for value in spend_category_ids:
-            if value == "uncategorized":
-                continue
-            try:
-                chart_category_ids.append(int(value))
-            except ValueError:
-                continue
-        if "uncategorized" in spend_category_ids:
-            chart_category_clauses.append("t.category_id IS NULL")
-        if chart_category_ids:
-            chart_category_clauses.append("t.category_id IN (SELECT id FROM categories WHERE id IN (" + ",".join("?" for _ in chart_category_ids) + ") OR parent_id IN (" + ",".join("?" for _ in chart_category_ids) + "))")
-            chart_category_values.extend(chart_category_ids * 2)
-        chart_filter_sql = (
-            " AND (" + " OR ".join(chart_category_clauses) + ")"
-            if chart_category_clauses
-            else ""
-        )
+        chart_clauses = list(clauses)
+        chart_values = list(values)
         rollup = request.args.get("leaf", "") != "1"
         category_expr = "COALESCE(parent.name, c.name)" if rollup else "c.name"
         spend_rows = connection.execute(
             "SELECT COALESCE(" + category_expr + ", 'Uncategorized'), SUM(-t.amount) "
-            "FROM transactions t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN categories parent ON parent.id=c.parent_id WHERE t.amount < 0"
-            + ((" AND " + " AND ".join(date_clauses)) if date_clauses else "")
-            + chart_filter_sql
-            + (" GROUP BY COALESCE(parent.id, c.id), COALESCE(parent.name, c.name)" if rollup else " GROUP BY t.category_id, c.name") + " ORDER BY 1 COLLATE NOCASE",
-            [*date_values, *chart_category_values],
+            "FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN account_owners ao ON ao.account_id=a.id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN categories parent ON parent.id=c.parent_id WHERE t.amount < 0"
+            + ((" AND " + " AND ".join(chart_clauses)) if chart_clauses else "")
+            + (" GROUP BY COALESCE(parent.id, c.id), COALESCE(parent.name, c.name)" if rollup else " GROUP BY t.category_id, c.name") + " ORDER BY 2 DESC",
+            chart_values,
         ).fetchall()
     finally:
         connection.close()
@@ -690,13 +675,13 @@ def transactions():
     ]
     filters = {
         "account_id": account_id,
-        "category_id": category_id,
+        "category_id": category_ids,
+        "owner": owner,
         "pending": pending,
         "q": query,
         "month": selected_month,
         "start_date": start_date,
         "end_date": end_date,
-        "spend_category_id": spend_category_ids,
     }
     spend_total = sum(amount for _, amount in spend_rows)
     palette = [
@@ -712,6 +697,7 @@ def transactions():
         "#9b704d",
     ]
     spend_breakdown = []
+    spend_rows.sort(key=lambda row: row[1], reverse=True)
     for index, (name, amount) in enumerate(spend_rows):
         percent = amount / spend_total * 100 if spend_total else 0
         color = palette[index % len(palette)]
@@ -722,6 +708,7 @@ def transactions():
         "transactions.html",
         transactions=transactions_data,
         accounts=accounts,
+        owners=owners,
         categories=categories,
         filters=filters,
         page=page,
@@ -752,10 +739,26 @@ def transaction_spend():
     elif month and not (start_date or end_date):
         clauses.append("substr(COALESCE(t.posted_date, t.transacted_at), 1, 7) = ?")
         values.append(month)
-    selected = request.args.getlist("spend_category_id")
+    selected = request.args.getlist("category_id")
     rollup = request.args.get("leaf", "") != "1"
     category_ids = []
     category_clauses = []
+    account_id = request.args.get("account_id", "").strip()
+    owner = request.args.get("owner", "").strip()
+    pending = request.args.get("pending", "").strip()
+    query = request.args.get("q", "").strip()
+    if account_id:
+        clauses.append("t.account_id = ?")
+        values.append(account_id)
+    if owner:
+        clauses.append("ao.owner = ?")
+        values.append(owner)
+    if pending in ("0", "1"):
+        clauses.append("t.pending = ?")
+        values.append(int(pending))
+    if query:
+        clauses.append("INSTR(LOWER(t.description), LOWER(?)) > 0")
+        values.append(query)
     for value in selected:
         if value == "uncategorized":
             category_clauses.append("t.category_id IS NULL")
@@ -775,7 +778,7 @@ def transaction_spend():
         category_expr = "COALESCE(parent.name, c.name)" if rollup else "c.name"
         rows = connection.execute(
             "SELECT COALESCE(" + category_expr + ", 'Uncategorized'), SUM(-t.amount) "
-            "FROM transactions t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN categories parent ON parent.id=c.parent_id "
+            "FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN account_owners ao ON ao.account_id=a.id LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN categories parent ON parent.id=c.parent_id "
             "WHERE t.amount < 0" + (" AND " + " AND ".join(clauses) if clauses else "") +
             (" GROUP BY COALESCE(parent.id, c.id), COALESCE(parent.name, c.name)" if rollup else " GROUP BY t.category_id, c.name") + " ORDER BY 1 COLLATE NOCASE", values
         ).fetchall()
@@ -785,7 +788,7 @@ def transaction_spend():
     total = sum(float(amount) for _, amount in rows)
     breakdown = [
         {"name": name, "amount": float(amount), "percent": float(amount) / total * 100 if total else 0, "color": palette[index % len(palette)]}
-        for index, (name, amount) in enumerate(rows)
+        for index, (name, amount) in enumerate(sorted(rows, key=lambda row: row[1], reverse=True))
     ]
     return jsonify({"total": total, "breakdown": breakdown})
 

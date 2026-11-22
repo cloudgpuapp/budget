@@ -91,7 +91,7 @@ function drawPie(canvas: HTMLCanvasElement, categories: SpendCategory[]): void {
 }
 
 async function refreshSpend(section: HTMLElement): Promise<void> {
-  const form = document.querySelector<HTMLFormElement>('form.filters input[name="month"]')?.form;
+  const form = document.querySelector<HTMLFormElement>("form.filters");
   const canvas = section.querySelector<HTMLCanvasElement>("canvas");
   if (!form || !canvas) return;
   const url = new URL(section.dataset.spendUrl ?? "", window.location.href);
@@ -139,7 +139,7 @@ function initCategoryDropdown(): void {
   const checkboxes = Array.from(dropdown.querySelectorAll<HTMLInputElement>(".cat-cb"));
   const sync = (): void => {
     const checked = checkboxes.filter((checkbox) => checkbox.checked);
-    summary.textContent = checked.length === 0 ? "None selected"
+    summary.textContent = checked.length === 0 ? "All categories"
       : checked.length === checkboxes.length ? `All (${checked.length})`
       : checked.length === 1 ? checked[0]!.parentElement!.textContent!.trim()
       : `${checked.length} selected`;
@@ -155,6 +155,20 @@ function initCategoryDropdown(): void {
     if (!dropdown.contains(event.target as Node)) dropdown.removeAttribute("open");
   });
   sync();
+}
+
+function initDateFilters(): void {
+  const form = document.querySelector<HTMLFormElement>("form.filters");
+  const month = form?.querySelector<HTMLSelectElement>('select[name="month"]');
+  const start = form?.querySelector<HTMLInputElement>('input[name="start_date"]');
+  const end = form?.querySelector<HTMLInputElement>('input[name="end_date"]');
+  if (!month || !start || !end) return;
+  month.addEventListener("change", () => {
+    if (month.value) { start.value = ""; end.value = ""; }
+  });
+  const clearMonth = (): void => { if (start.value || end.value) month.value = ""; };
+  start.addEventListener("change", clearMonth);
+  end.addEventListener("change", clearMonth);
 }
 
 function initCategoryEditing(): void {
@@ -250,6 +264,7 @@ function initTrend(): void {
 }
 
 initCategoryDropdown();
+initDateFilters();
 initCategoryEditing();
 initTrend();
 const pie = document.querySelector<HTMLCanvasElement>(".spend canvas");

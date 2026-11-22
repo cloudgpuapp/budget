@@ -168,6 +168,7 @@ def get_transactions(
     access_url: str | None = None,
     account_names: Mapping[str, str] | None = None,
     *,
+    account_owners: Mapping[str, str] | None = None,
     start_date: date | str | None = None,
     end_date: date | str | None = None,
 ) -> list[dict[str, Any]]:
@@ -178,8 +179,12 @@ def get_transactions(
     """
     if access_url is None:
         access_url = get_env("SIMPLEFIN_ACCESS_URL")
-    if account_names is None:
-        account_names = load_toml().get("simplefin", {}).get("accounts", {})
+    if account_names is None or account_owners is None:
+        simplefin_config = load_toml().get("simplefin", {})
+        if account_names is None:
+            account_names = simplefin_config.get("accounts", {})
+        if account_owners is None:
+            account_owners = simplefin_config.get("account_owners", {})
     try:
         today = date.today()
         end = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
@@ -234,7 +239,9 @@ def get_transactions(
             if not isinstance(transactions, list):
                 raise TypeError("transactions is not a list")
             normalized.append(
-                {"id": account_id, "name": display_name, "transactions": transactions}
+                {"id": account_id, "name": display_name,
+                 "owner": account_owners.get(account_id, account.get("owner")),
+                 "transactions": transactions}
             )
         return normalized
     except SimpleFINError:

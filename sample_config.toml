@@ -5,6 +5,10 @@ sheet_pattern = "^\\d{1,2}/\\d{4}$"  # matches "3/2026", "12/2025", etc.
 # Map each SimpleFIN account id to the display name used by the budget app.
 # First run `budget simplefin --list-raw-ids`, then paste a listed ID here.
 "replace-with-simplefin-account-id" = "Josh's Schwab Savings"
+
+[simplefin.account_owners]
+# Optional: map account IDs to the owner labels shown in the transaction filters.
+# "replace-with-simplefin-account-id" = "Josh"
  
 # Define the cells you care about as label = "CellRef"
 # You can organize them into any sections you like.

@@ -51,6 +51,17 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
             name TEXT NOT NULL
         )
     """)
+    connection.execute("""CREATE TABLE IF NOT EXISTS account_owners (
+        account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE CASCADE,
+        owner TEXT NOT NULL
+    )""")
+    account_columns = {row[1] for row in connection.execute("PRAGMA table_info(accounts)")}
+    if "owner" in account_columns:
+        connection.execute(
+            """INSERT OR IGNORE INTO account_owners (account_id, owner)
+               SELECT id, owner FROM accounts WHERE owner IS NOT NULL AND owner != ''"""
+        )
+        connection.execute("ALTER TABLE accounts DROP COLUMN owner")
     connection.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
             account_id TEXT NOT NULL REFERENCES accounts(id) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -293,6 +304,7 @@ def insert_simplefin_transactions(
 ) -> int:
     """Upsert mapped SimpleFIN accounts and their transactions; return rows written."""
     account_rows = []
+    owner_rows = []
     transaction_rows = []
     for account in accounts:
         account_id = account.get("id")
@@ -300,6 +312,8 @@ def insert_simplefin_transactions(
         if account_id is None or account_name is None:
             raise ValueError("Each account must include an id and name")
         account_rows.append((str(account_id), str(account_name)))
+        if account.get("owner") not in (None, ""):
+            owner_rows.append((str(account_id), str(account["owner"])))
         for transaction in account.get("transactions", []):
             transaction_id = transaction.get("id")
             description = transaction.get("description")
@@ -343,6 +357,11 @@ def insert_simplefin_transactions(
             """INSERT INTO accounts (id, name) VALUES (?, ?)
                ON CONFLICT(id) DO UPDATE SET name = excluded.name""",
             account_rows,
+        )
+        connection.executemany(
+            """INSERT INTO account_owners (account_id, owner) VALUES (?, ?)
+               ON CONFLICT(account_id) DO UPDATE SET owner = excluded.owner""",
+            owner_rows,
         )
         connection.executemany(
             """INSERT INTO transactions

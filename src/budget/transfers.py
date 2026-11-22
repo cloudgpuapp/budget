@@ -8,6 +8,14 @@ import sqlite3
 TRANSFER_MATCH_WINDOW_DAYS = 10
 
 
+def transfer_pair_key(source: dict, candidate: dict) -> tuple[str, str, str, str]:
+    """Return a stable, account/transaction ordered key for a pair."""
+    first = (str(source["account_id"]), str(source["transaction_id"]))
+    second = (str(candidate["account_id"]), str(candidate["transaction_id"]))
+    first, second = sorted((first, second))
+    return first[0], first[1], second[0], second[1]
+
+
 def suggest_transfer_pairs(
     connection: sqlite3.Connection, *, window_days: int | None = None
 ) -> list[dict]:
@@ -33,6 +41,18 @@ def suggest_transfer_pairs(
              AND t.amount != 0
            ORDER BY transaction_date, t.account_id, t.transaction_id"""
     ).fetchall()
+    rejection_table_exists = connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='transfer_rejections'"
+    ).fetchone()
+    rejected_pairs = set()
+    if rejection_table_exists:
+        rejected_pairs = {
+            (row[0], row[1], row[2], row[3])
+            for row in connection.execute(
+                "SELECT account_id_a, transaction_id_a, account_id_b, transaction_id_b "
+                "FROM transfer_rejections"
+            )
+        }
 
     records = []
     by_amount_and_sign: dict[tuple[int, int], list[tuple[int, int]]] = {}
@@ -80,16 +100,18 @@ def suggest_transfer_pairs(
             if source["account_id"] == candidate["account_id"]:
                 continue
             debit, credit = (source, candidate) if source["_sign"] < 0 else (candidate, source)
+            debit_public = {
+                key: value for key, value in debit.items() if not key.startswith("_")
+            }
+            credit_public = {
+                key: value for key, value in credit.items() if not key.startswith("_")
+            }
+            if transfer_pair_key(debit_public, credit_public) in rejected_pairs:
+                continue
             pairs.append(
                 {
-                    "source": {
-                        key: value for key, value in debit.items()
-                        if not key.startswith("_")
-                    },
-                    "candidate": {
-                        key: value for key, value in credit.items()
-                        if not key.startswith("_")
-                    },
+                    "source": debit_public,
+                    "candidate": credit_public,
                     "days_apart": abs(source["_day"] - candidate["_day"]),
                 }
             )

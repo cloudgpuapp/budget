@@ -5,6 +5,7 @@
 ### Added
 
 - On-demand transfer pair suggestions across accounts, using a 10-day window and preserving every ambiguous candidate.
+- Transfer review page with pair approval, persistent rejection, and unmark actions.
 - Transfer categories that can be hidden from transactions and excluded from spend and income summaries. Existing `Transfer` and `Transfers` categories are flagged during migration.
 - Hover over a spend chart category to see its name.
 - Nested Categories

@@ -23,9 +23,10 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, url
 
 from budget.analyze import build_budget
 from budget.balances_db import _connect, get_balance_history, get_transactions
-from budget.categorizer import recategorize_all
+from budget.categorizer import categorize_transaction, recategorize_all
 from budget.config import ConfigError, get_env, load_toml
 from budget.sheets import build_service, fetch_cells, list_sheet_names
+from budget.transfers import suggest_transfer_pairs, transfer_pair_key
 
 load_dotenv()
 
@@ -826,6 +827,166 @@ def transaction_spend():
         for index, (name, amount) in enumerate(sorted(rows, key=lambda row: row[1], reverse=True))
     ]
     return jsonify({"total": total, "breakdown": breakdown})
+
+
+@app.get("/transfers")
+def transfers():
+    connection = _connect()
+    try:
+        suggestions = suggest_transfer_pairs(connection)
+        flagged_ids = {
+            row[0]
+            for row in connection.execute(
+                "SELECT id FROM categories WHERE is_transfer=1"
+            )
+        }
+        transfer_categories = [
+            {"id": category_id, "name": name}
+            for category_id, name in _category_options(connection)
+            if category_id in flagged_ids
+        ]
+        approved = connection.execute(
+            """SELECT t.account_id, t.transaction_id, a.name,
+                      COALESCE(t.posted_date, t.transacted_at), t.amount,
+                      t.description, c.name
+               FROM transactions t JOIN accounts a ON a.id=t.account_id
+               JOIN categories c ON c.id=t.category_id
+               WHERE c.is_transfer=1 AND t.is_manual_category=1
+               ORDER BY COALESCE(t.posted_date, t.transacted_at) DESC,
+                        a.name COLLATE NOCASE, t.transaction_id"""
+        ).fetchall()
+    finally:
+        connection.close()
+    return render_template(
+        "transfers.html",
+        suggestions=suggestions,
+        transfer_categories=transfer_categories,
+        approved=[
+            {
+                "account_id": row[0],
+                "transaction_id": row[1],
+                "account": row[2],
+                "date": row[3],
+                "amount": row[4],
+                "description": row[5],
+                "category": row[6],
+            }
+            for row in approved
+        ],
+    )
+
+
+def _posted_transfer_suggestion(connection, source, candidate):
+    pair = transfer_pair_key(source, candidate)
+    for suggestion in suggest_transfer_pairs(connection):
+        if transfer_pair_key(suggestion["source"], suggestion["candidate"]) == pair:
+            return suggestion
+    return None
+
+
+def _transfer_form_pair(connection):
+    source = {
+        "account_id": request.form.get("source_account_id", ""),
+        "transaction_id": request.form.get("source_transaction_id", ""),
+    }
+    candidate = {
+        "account_id": request.form.get("candidate_account_id", ""),
+        "transaction_id": request.form.get("candidate_transaction_id", ""),
+    }
+    if not all((source["account_id"], source["transaction_id"], candidate["account_id"], candidate["transaction_id"])):
+        return None, None
+    return source, candidate
+
+
+@app.post("/transfers/approve")
+def approve_transfer():
+    connection = _connect()
+    try:
+        source, candidate = _transfer_form_pair(connection)
+        if source is None or _posted_transfer_suggestion(connection, source, candidate) is None:
+            flash("That transfer suggestion is no longer available.", "error")
+            return redirect(url_for("transfers"))
+        try:
+            category_id = int(request.form.get("category_id", ""))
+        except ValueError:
+            category_id = 0
+        if not connection.execute(
+            "SELECT 1 FROM categories WHERE id=? AND is_transfer=1", (category_id,)
+        ).fetchone():
+            flash("Choose a transfer category before approving.", "error")
+            return redirect(url_for("transfers"))
+        for transaction in (source, candidate):
+            cursor = connection.execute(
+                """UPDATE transactions
+                   SET category_id=?, rule_id=NULL, is_manual_category=1
+                   WHERE account_id=? AND transaction_id=? AND pending=0""",
+                (category_id, transaction["account_id"], transaction["transaction_id"]),
+            )
+            if cursor.rowcount != 1:
+                connection.rollback()
+                flash("That transfer suggestion changed. Please review it again.", "error")
+                return redirect(url_for("transfers"))
+        connection.commit()
+        flash("Transfer approved and categorized.", "success")
+    finally:
+        connection.close()
+    return redirect(url_for("transfers"))
+
+
+@app.post("/transfers/reject")
+def reject_transfer():
+    connection = _connect()
+    try:
+        source, candidate = _transfer_form_pair(connection)
+        if source is None or _posted_transfer_suggestion(connection, source, candidate) is None:
+            flash("That transfer suggestion is no longer available.", "error")
+            return redirect(url_for("transfers"))
+        account_id_a, transaction_id_a, account_id_b, transaction_id_b = transfer_pair_key(
+            source, candidate
+        )
+        connection.execute(
+            """INSERT OR IGNORE INTO transfer_rejections
+               (account_id_a, transaction_id_a, account_id_b, transaction_id_b)
+               VALUES (?, ?, ?, ?)""",
+            (account_id_a, transaction_id_a, account_id_b, transaction_id_b),
+        )
+        connection.commit()
+        flash("Transfer suggestion rejected.", "success")
+    finally:
+        connection.close()
+    return redirect(url_for("transfers"))
+
+
+@app.post("/transfers/unmark")
+def unmark_transfer():
+    account_id = request.form.get("account_id", "")
+    transaction_id = request.form.get("transaction_id", "")
+    connection = _connect()
+    try:
+        row = connection.execute(
+            """SELECT t.description FROM transactions t
+               JOIN categories c ON c.id=t.category_id
+               WHERE t.account_id=? AND t.transaction_id=?
+                 AND t.is_manual_category=1 AND c.is_transfer=1""",
+            (account_id, transaction_id),
+        ).fetchone()
+        if row is None:
+            flash("That approved transfer is no longer available.", "error")
+        else:
+            category_id, rule_id = categorize_transaction(
+                connection,
+                {"description": row[0], "is_manual_category": 0},
+            )
+            connection.execute(
+                """UPDATE transactions SET category_id=?, rule_id=?, is_manual_category=0
+                   WHERE account_id=? AND transaction_id=?""",
+                (category_id, rule_id, account_id, transaction_id),
+            )
+            connection.commit()
+            flash("Transfer returned to automatic categorization.", "success")
+    finally:
+        connection.close()
+    return redirect(url_for("transfers"))
 
 
 @app.post("/transactions/<account_id>/<transaction_id>/category")

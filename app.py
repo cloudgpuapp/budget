@@ -314,14 +314,20 @@ def balances_trend():
 
 
 def _non_transfer_clause(transaction_alias="t"):
-    """SQL predicate that excludes transactions assigned to transfer categories."""
-    return f"({transaction_alias}.category_id IS NULL OR NOT EXISTS (SELECT 1 FROM categories transfer_category WHERE transfer_category.id={transaction_alias}.category_id AND transfer_category.is_transfer=1))"
+    """Exclude transactions in transfer categories or their subcategories."""
+    return (
+        f"({transaction_alias}.category_id IS NULL OR NOT EXISTS ("
+        "SELECT 1 FROM categories assigned_category "
+        "LEFT JOIN categories assigned_parent ON assigned_parent.id=assigned_category.parent_id "
+        f"WHERE assigned_category.id={transaction_alias}.category_id "
+        "AND (assigned_category.is_transfer=1 OR assigned_parent.is_transfer=1)))"
+    )
 
 
 def _category_options(connection, *, exclude_transfers=False):
     query = "SELECT c.id, c.name, c.parent_id, parent.name FROM categories c LEFT JOIN categories parent ON parent.id=c.parent_id"
     if exclude_transfers:
-        query += " WHERE c.is_transfer=0"
+        query += " WHERE c.is_transfer=0 AND COALESCE(parent.is_transfer, 0)=0"
     rows = connection.execute(query + " ORDER BY c.name COLLATE NOCASE").fetchall()
     return [
         (category_id, f"{parent_name} › {name}" if parent_id else name)
@@ -345,6 +351,13 @@ def rules():
         transfer_categories = {
             row[0] for row in connection.execute(
                 "SELECT id FROM categories WHERE is_transfer=1"
+            ).fetchall()
+        }
+        inherited_transfer_categories = {
+            row[0]
+            for row in connection.execute(
+                """SELECT c.id FROM categories c JOIN categories parent ON parent.id=c.parent_id
+                   WHERE c.is_transfer=0 AND parent.is_transfer=1"""
             ).fetchall()
         }
     finally:
@@ -375,6 +388,7 @@ def rules():
         selected_category=request.args.get("category_id", ""),
         parent_categories=parent_categories,
         transfer_categories=transfer_categories,
+        inherited_transfer_categories=inherited_transfer_categories,
     )
 
 
@@ -837,7 +851,8 @@ def transfers():
         flagged_ids = {
             row[0]
             for row in connection.execute(
-                "SELECT id FROM categories WHERE is_transfer=1"
+                """SELECT c.id FROM categories c LEFT JOIN categories parent ON parent.id=c.parent_id
+                   WHERE c.is_transfer=1 OR parent.is_transfer=1"""
             )
         }
         transfer_categories = [
@@ -851,7 +866,8 @@ def transfers():
                       t.description, c.name
                FROM transactions t JOIN accounts a ON a.id=t.account_id
                JOIN categories c ON c.id=t.category_id
-               WHERE c.is_transfer=1 AND t.is_manual_category=1
+               LEFT JOIN categories parent ON parent.id=c.parent_id
+               WHERE (c.is_transfer=1 OR parent.is_transfer=1) AND t.is_manual_category=1
                ORDER BY COALESCE(t.posted_date, t.transacted_at) DESC,
                         a.name COLLATE NOCASE, t.transaction_id"""
         ).fetchall()
@@ -911,7 +927,9 @@ def approve_transfer():
         except ValueError:
             category_id = 0
         if not connection.execute(
-            "SELECT 1 FROM categories WHERE id=? AND is_transfer=1", (category_id,)
+            """SELECT 1 FROM categories c LEFT JOIN categories parent ON parent.id=c.parent_id
+               WHERE c.id=? AND (c.is_transfer=1 OR parent.is_transfer=1)""",
+            (category_id,),
         ).fetchone():
             flash("Choose a transfer category before approving.", "error")
             return redirect(url_for("transfers"))
@@ -966,8 +984,9 @@ def unmark_transfer():
         row = connection.execute(
             """SELECT t.description FROM transactions t
                JOIN categories c ON c.id=t.category_id
+               LEFT JOIN categories parent ON parent.id=c.parent_id
                WHERE t.account_id=? AND t.transaction_id=?
-                 AND t.is_manual_category=1 AND c.is_transfer=1""",
+                 AND t.is_manual_category=1 AND (c.is_transfer=1 OR parent.is_transfer=1)""",
             (account_id, transaction_id),
         ).fetchone()
         if row is None:

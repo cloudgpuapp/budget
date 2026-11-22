@@ -139,3 +139,29 @@ def test_budget_overview_omits_transfer_income_and_expense(monkeypatch, tmp_path
     trends = load_sqlite_monthly_trends()
     assert trends["total_income"] == 100
     assert trends["total_expenses"] == 20
+
+
+def test_child_of_transfer_category_inherits_transfer_behavior(monkeypatch, tmp_path):
+    transfer_id = _seed_transfer_data(monkeypatch, tmp_path)
+    connection = _connect()
+    child_id = connection.execute(
+        "INSERT INTO categories(name, parent_id) VALUES ('Credit Card Payment', ?)",
+        (transfer_id,),
+    ).lastrowid
+    connection.execute(
+        "UPDATE transactions SET category_id=? WHERE transaction_id IN ('transfer-out', 'transfer-in')",
+        (child_id,),
+    )
+    connection.commit()
+    connection.close()
+    client = app.test_client()
+
+    page = client.get("/transactions").get_data(as_text=True)
+    shown = client.get("/transactions?show_transfers=1").get_data(as_text=True)
+    assert "2 transactions" in page
+    assert "Move to savings" not in page
+    assert "Credit Card Payment" in shown
+    assert "Credit Card Payment" not in page.split('id="catDropdown"', 1)[1].split("</details>", 1)[0]
+    assert client.get("/api/transactions/spend").get_json()["total"] == 20
+    assert load_sqlite_monthly_trends()["total_expenses"] == 20
+    assert b"Transfer via parent" in client.get("/rules").data

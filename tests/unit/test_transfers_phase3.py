@@ -155,6 +155,30 @@ def test_approval_rejects_non_transfer_categories(monkeypatch, tmp_path):
     connection.close()
 
 
+def test_child_of_transfer_category_can_be_selected_for_approval(monkeypatch, tmp_path):
+    parent_id, _, _ = _seed(monkeypatch, tmp_path)
+    connection = _connect()
+    child_id = connection.execute(
+        "INSERT INTO categories(name, parent_id) VALUES ('Card payment', ?)",
+        (parent_id,),
+    ).lastrowid
+    connection.commit()
+    connection.close()
+
+    response = app.test_client().post(
+        "/transfers/approve",
+        data={**_pair_form(), "category_id": str(child_id)},
+    )
+
+    assert response.status_code == 302
+    connection = _connect()
+    assert connection.execute(
+        "SELECT COUNT(*) FROM transactions WHERE category_id=? AND is_manual_category=1",
+        (child_id,),
+    ).fetchone()[0] == 2
+    connection.close()
+
+
 def test_ambiguous_rejection_only_hides_rejected_candidate(monkeypatch, tmp_path):
     _seed(monkeypatch, tmp_path)
     connection = _connect()

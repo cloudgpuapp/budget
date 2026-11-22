@@ -28,6 +28,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.6rem;bo
 <input type="hidden" name="account_id" value="{{ filters.account_id }}"><input type="hidden" name="category_id" value="{{ filters.category_id }}"><input type="hidden" name="pending" value="{{ filters.pending }}"><input type="hidden" name="q" value="{{ filters.q }}">
 <label>Month <select name="month"><option value="">All available dates</option>{% for month in months %}<option value="{{ month }}" {% if selected_month == month %}selected{% endif %}>{{ month }}</option>{% endfor %}</select></label>
 <label>From <input type="date" name="start_date" value="{{ start_date }}"></label><label>Through <input type="date" name="end_date" value="{{ end_date }}"></label>
+<label><input type="checkbox" name="leaf" value="1" {% if not rollup %}checked{% endif %}> Show leaf categories</label>
 <span>Chart categories
   <details class="cat-dropdown" id="catDropdown">
     <summary id="catSummary">Select categories...</summary>

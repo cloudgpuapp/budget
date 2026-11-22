@@ -10,6 +10,10 @@
 
 - Migrated the frontend to TypeScript and added the `npm run build` bundle step.
 
+### Features
+
+- Nested Categories
+
 ## v0.1.0
 
 ### Added

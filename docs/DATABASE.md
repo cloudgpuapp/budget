@@ -2,7 +2,7 @@
 
 SQLite is the system of record for imported transactions and balance history. The path comes from `BUDGET_DB_PATH`; otherwise it is `~/.local/share/budget/balances.sqlite3`, or `$XDG_DATA_HOME/budget/balances.sqlite3` when `XDG_DATA_HOME` is set. SQLite uses WAL mode and foreign keys.
 
-The current schema sets `PRAGMA user_version = 3`:
+The current schema sets `PRAGMA user_version = 4`:
 
 | Table | Contents |
 | --- | --- |
@@ -10,10 +10,10 @@ The current schema sets `PRAGMA user_version = 3`:
 | `simplefin_request_counts` | Daily request count used to enforce the 24-request limit. |
 | `accounts` | SimpleFIN account IDs and configured display names. |
 | `transactions` | Upserted transactions, pending state, dates, category and manual-override fields. |
-| `categories` | User-defined transaction categories. |
+| `categories` | User-defined transaction categories with optional one-level `parent_id` hierarchy. |
 | `categorization_rules` | Ordered active/inactive rules and their JSON conditions. |
 
-Schema setup and migrations happen in `balances_db._connect()`: it creates missing tables/indexes, checks existing columns, applies additive changes with `ALTER TABLE`, then sets `user_version` to 3. Keep a backup before replacing the application with a version that changes the schema.
+Schema setup and migrations happen in `balances_db._connect()`: it creates missing tables/indexes, checks existing columns, applies additive changes with `ALTER TABLE`, then sets `user_version` to 4. Category names remain globally unique without regard to parent. Keep a backup before replacing the application with a version that changes the schema.
 
 ## Backup and restore
 

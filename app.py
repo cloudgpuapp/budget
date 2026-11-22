@@ -312,16 +312,28 @@ def balances_trend():
     return jsonify(points)
 
 
+def _category_options(connection):
+    rows = connection.execute(
+        "SELECT id, name, parent_id FROM categories ORDER BY name COLLATE NOCASE"
+    ).fetchall()
+    names = {category_id: name for category_id, name, _ in rows}
+    return [
+        (category_id, f"{names[parent_id]} › {name}" if parent_id else name)
+        for category_id, name, parent_id in rows
+    ]
+
+
 @app.route("/rules", methods=["GET"])
 def rules():
     connection = _connect()
     try:
-        categories = connection.execute(
-            "SELECT id, name FROM categories ORDER BY name COLLATE NOCASE"
+        categories = _category_options(connection)
+        parent_categories = connection.execute(
+            "SELECT id, name FROM categories WHERE parent_id IS NULL ORDER BY name COLLATE NOCASE"
         ).fetchall()
         rule_rows = connection.execute(
-            """SELECT r.id, r.name, r.category_id, c.name, r.priority, r.is_active, r.conditions
-               FROM categorization_rules r JOIN categories c ON c.id=r.category_id
+            """SELECT r.id, r.name, r.category_id, CASE WHEN p.id IS NULL THEN c.name ELSE p.name || ' › ' || c.name END, r.priority, r.is_active, r.conditions
+               FROM categorization_rules r JOIN categories c ON c.id=r.category_id LEFT JOIN categories p ON p.id=c.parent_id
                ORDER BY r.priority, r.id"""
         ).fetchall()
     finally:
@@ -350,23 +362,29 @@ def rules():
         rules=rules_data,
         description=request.args.get("description", ""),
         selected_category=request.args.get("category_id", ""),
+        parent_categories=parent_categories,
     )
 
 
 @app.post("/categories")
 def create_category():
     name = request.form.get("name", "").strip()
+    raw_parent = request.form.get("parent_id", "").strip()
+    try:
+        parent_id = int(raw_parent) if raw_parent else None
+    except ValueError:
+        parent_id = None
     if not name:
         flash("Enter a category name.", "error")
     else:
         connection = _connect()
         try:
-            connection.execute("INSERT INTO categories(name) VALUES (?)", (name,))
+            connection.execute("INSERT INTO categories(name, parent_id) VALUES (?, ?)", (name, parent_id))
             connection.commit()
             flash(f"Added category {name}.", "success")
-        except sqlite3.IntegrityError:
+        except sqlite3.IntegrityError as exc:
             connection.rollback()
-            flash(f"Category {name} already exists.", "error")
+            flash(f"Category {name} already exists." if "UNIQUE" in str(exc) else "Subcategories can only be added to top-level categories.", "error")
         finally:
             connection.close()
     return redirect(url_for("rules"))
@@ -398,10 +416,30 @@ def rename_category(category_id):
     return redirect(url_for("rules"))
 
 
+@app.post("/categories/<int:category_id>/parent")
+def reparent_category(category_id):
+    raw_parent = request.form.get("parent_id", "").strip()
+    try:
+        parent_id = int(raw_parent) if raw_parent else None
+        connection = _connect()
+        try:
+            connection.execute("UPDATE categories SET parent_id=? WHERE id=?", (parent_id, category_id))
+            connection.commit()
+            flash("Category moved.", "success")
+        finally:
+            connection.close()
+    except (ValueError, sqlite3.IntegrityError):
+        flash("Categories can only be nested one level deep.", "error")
+    return redirect(url_for("rules"))
+
+
 @app.post("/categories/<int:category_id>/delete")
 def delete_category(category_id):
     connection = _connect()
     try:
+        if connection.execute("SELECT 1 FROM categories WHERE parent_id=? LIMIT 1", (category_id,)).fetchone():
+            flash("Category has subcategories.", "error")
+            return redirect(url_for("rules"))
         referenced = connection.execute(
             "SELECT 1 FROM transactions WHERE category_id=? LIMIT 1", (category_id,)
         ).fetchone()
@@ -539,8 +577,9 @@ def transactions():
         clauses.append("t.category_id IS NULL")
     elif category_id:
         try:
-            values.append(int(category_id))
-            clauses.append("t.category_id = ?")
+            selected_id = int(category_id)
+            values.extend([selected_id, selected_id])
+            clauses.append("t.category_id IN (SELECT id FROM categories WHERE id=? OR parent_id=?)")
         except ValueError:
             category_id = ""
     if pending in ("0", "1"):
@@ -559,10 +598,11 @@ def transactions():
         ).fetchone()[0]
         rows = connection.execute(
             """SELECT t.account_id, t.transaction_id, COALESCE(t.posted_date, t.transacted_at),
-                      a.name, t.description, t.pending, t.amount, t.category_id, c.name,
+                      a.name, t.description, t.pending, t.amount, t.category_id,
+                      CASE WHEN parent.id IS NULL THEN c.name ELSE parent.name || ' › ' || c.name END,
                       t.is_manual_category
                FROM transactions t JOIN accounts a ON a.id=t.account_id
-               LEFT JOIN categories c ON c.id=t.category_id"""
+               LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN categories parent ON parent.id=c.parent_id"""
             + where
             + " ORDER BY COALESCE(t.posted_date, t.transacted_at) DESC, t.rowid DESC LIMIT ? OFFSET ?",
             [*values, per_page, (page - 1) * per_page],
@@ -570,9 +610,7 @@ def transactions():
         accounts = connection.execute(
             "SELECT id, name FROM accounts ORDER BY name COLLATE NOCASE"
         ).fetchall()
-        categories = connection.execute(
-            "SELECT id, name FROM categories ORDER BY name COLLATE NOCASE"
-        ).fetchall()
+        categories = _category_options(connection)
         months = [
             row[0]
             for row in connection.execute(
@@ -611,21 +649,21 @@ def transactions():
         if "uncategorized" in spend_category_ids:
             chart_category_clauses.append("t.category_id IS NULL")
         if chart_category_ids:
-            chart_category_clauses.append(
-                "t.category_id IN (" + ",".join("?" for _ in chart_category_ids) + ")"
-            )
-            chart_category_values.extend(chart_category_ids)
+            chart_category_clauses.append("t.category_id IN (SELECT id FROM categories WHERE id IN (" + ",".join("?" for _ in chart_category_ids) + ") OR parent_id IN (" + ",".join("?" for _ in chart_category_ids) + "))")
+            chart_category_values.extend(chart_category_ids * 2)
         chart_filter_sql = (
             " AND (" + " OR ".join(chart_category_clauses) + ")"
             if chart_category_clauses
             else ""
         )
+        rollup = request.args.get("leaf", "") != "1"
+        category_expr = "COALESCE(parent.name, c.name)" if rollup else "c.name"
         spend_rows = connection.execute(
-            "SELECT COALESCE(c.name, 'Uncategorized'), SUM(-t.amount) "
-            "FROM transactions t LEFT JOIN categories c ON c.id=t.category_id WHERE t.amount < 0"
+            "SELECT COALESCE(" + category_expr + ", 'Uncategorized'), SUM(-t.amount) "
+            "FROM transactions t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN categories parent ON parent.id=c.parent_id WHERE t.amount < 0"
             + ((" AND " + " AND ".join(date_clauses)) if date_clauses else "")
             + chart_filter_sql
-            + " GROUP BY t.category_id, c.name ORDER BY 1 COLLATE NOCASE",
+            + (" GROUP BY COALESCE(parent.id, c.id), COALESCE(parent.name, c.name)" if rollup else " GROUP BY t.category_id, c.name") + " ORDER BY 1 COLLATE NOCASE",
             [*date_values, *chart_category_values],
         ).fetchall()
     finally:
@@ -695,6 +733,7 @@ def transactions():
         end_date=end_date,
         spend_breakdown=spend_breakdown,
         spend_total=spend_total,
+        rollup=rollup,
     )
 
 
@@ -714,6 +753,7 @@ def transaction_spend():
         clauses.append("substr(COALESCE(t.posted_date, t.transacted_at), 1, 7) = ?")
         values.append(month)
     selected = request.args.getlist("spend_category_id")
+    rollup = request.args.get("leaf", "") != "1"
     category_ids = []
     category_clauses = []
     for value in selected:
@@ -725,17 +765,19 @@ def transaction_spend():
             except ValueError:
                 continue
     if category_ids:
-        category_clauses.append("t.category_id IN (" + ",".join("?" for _ in category_ids) + ")")
-        values.extend(category_ids)
+        placeholders = ",".join("?" for _ in category_ids)
+        category_clauses.append("t.category_id IN (SELECT id FROM categories WHERE id IN (" + placeholders + ") OR parent_id IN (" + placeholders + "))")
+        values.extend(category_ids * 2)
     if category_clauses:
         clauses.append("(" + " OR ".join(category_clauses) + ")")
     connection = _connect()
     try:
+        category_expr = "COALESCE(parent.name, c.name)" if rollup else "c.name"
         rows = connection.execute(
-            "SELECT COALESCE(c.name, 'Uncategorized'), SUM(-t.amount) "
-            "FROM transactions t LEFT JOIN categories c ON c.id=t.category_id "
+            "SELECT COALESCE(" + category_expr + ", 'Uncategorized'), SUM(-t.amount) "
+            "FROM transactions t LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN categories parent ON parent.id=c.parent_id "
             "WHERE t.amount < 0" + (" AND " + " AND ".join(clauses) if clauses else "") +
-            " GROUP BY t.category_id, c.name ORDER BY 1 COLLATE NOCASE", values
+            (" GROUP BY COALESCE(parent.id, c.id), COALESCE(parent.name, c.name)" if rollup else " GROUP BY t.category_id, c.name") + " ORDER BY 1 COLLATE NOCASE", values
         ).fetchall()
     finally:
         connection.close()

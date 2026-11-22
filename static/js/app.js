@@ -71,6 +71,8 @@ async function refreshSpend(section) {
   new FormData(form).forEach((value, key) => {
     if (typeof value === "string") params.append(key, value);
   });
+  const leafView = document.querySelector('form.filters input[name="leaf"]');
+  params.set("leaf", leafView?.checked ? "1" : "0");
   url.search = params.toString();
   const response = await fetch(url);
   if (!response.ok) throw new Error("Could not refresh spending chart");

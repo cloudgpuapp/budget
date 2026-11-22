@@ -73,6 +73,31 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
         name TEXT NOT NULL UNIQUE COLLATE NOCASE,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )""")
+    category_columns = {row[1] for row in connection.execute("PRAGMA table_info(categories)")}
+    if "parent_id" not in category_columns:
+        connection.execute("ALTER TABLE categories ADD COLUMN parent_id INTEGER REFERENCES categories(id) ON DELETE RESTRICT")
+    connection.execute("""CREATE TRIGGER IF NOT EXISTS categories_parent_insert
+        BEFORE INSERT ON categories WHEN NEW.parent_id IS NOT NULL
+        BEGIN
+          SELECT CASE WHEN NEW.parent_id = NEW.id OR
+            (SELECT parent_id FROM categories WHERE id=NEW.parent_id) IS NOT NULL
+            THEN RAISE(ABORT, 'category depth limit exceeded') END;
+        END""")
+    connection.execute("""CREATE TRIGGER IF NOT EXISTS categories_parent_update
+        BEFORE UPDATE OF parent_id ON categories WHEN NEW.parent_id IS NOT NULL
+        BEGIN
+          SELECT CASE WHEN NEW.parent_id = NEW.id OR
+            (SELECT parent_id FROM categories WHERE id=NEW.parent_id) IS NOT NULL
+            THEN RAISE(ABORT, 'category depth limit exceeded') END;
+        END""")
+    connection.execute("""CREATE TRIGGER IF NOT EXISTS categories_parent_subtree_update
+        BEFORE UPDATE OF parent_id ON categories
+        WHEN NEW.parent_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM categories WHERE parent_id=NEW.id
+        )
+        BEGIN
+          SELECT RAISE(ABORT, 'category with subcategories cannot be nested');
+        END""")
     connection.execute("""CREATE TABLE IF NOT EXISTS categorization_rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT,
@@ -108,7 +133,7 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
         connection.execute(
             "ALTER TABLE balance_snapshots ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
         )
-    connection.execute("PRAGMA user_version = 3")
+    connection.execute("PRAGMA user_version = 4")
     return connection
 
 

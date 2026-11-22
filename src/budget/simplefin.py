@@ -1,4 +1,4 @@
-"""Small SimpleFIN Bridge client for claiming tokens and reading balances.
+"""Small SimpleFIN Bridge client for claiming tokens and reading account data.
 
 SimpleFIN's protocol specification does not prescribe a rate limit. The
 SimpleFIN Bridge developer guide expects at most 24 all-account requests per
@@ -73,6 +73,8 @@ def claim_setup_token(setup_token: str) -> str:
 def get_accounts(
     access_url: str | None = None,
     account_names: Mapping[str, str] | None = None,
+    *,
+    include_unmapped: bool = False,
 ) -> list[dict[str, Any]]:
     """Fetch account ids, names, balances, and balance timestamps.
 
@@ -120,7 +122,7 @@ def get_accounts(
         for account in accounts:
             account_id = account["id"]
             display_name = account_names.get(account_id)
-            if display_name is None:
+            if display_name is None and not include_unmapped:
                 logger.warning("Skipping unmapped SimpleFIN account id %s", account_id)
                 continue
             balance_date = account.get("balance-date")
@@ -146,7 +148,7 @@ def get_accounts(
             normalized.append(
                 {
                     "id": account_id,
-                    "name": display_name,
+                    "name": display_name or account.get("name") or account_id,
                     "balance": account["balance"],
                     "balance_timestamp": account.get("balance-date"),
                     "date": balance_date,

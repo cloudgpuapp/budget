@@ -3,7 +3,7 @@ retirement_forecast.py — Retirement Monte Carlo helpers.
 
 This module lifts the notebook prototype into reusable project code. It keeps
 the same bootstrap/simulation flow as the notebook while adding small data
-hooks for Google Sheets-backed balances and budget values.
+hooks for SQLite-backed balances and legacy Sheets budget values.
 """
 
 from __future__ import annotations
@@ -374,14 +374,14 @@ def get_total_retirement_savings_balance(
 
     amount_column = _find_amount_column(balances_df)
     if amount_column is None:
-        logger.warning("Balances sheet did not contain an amount-like column.")
+        logger.warning("SQLite balance history did not contain an amount-like column.")
         logger.info(f"Returning default initial balance of {DEFAULT_INITIAL_BALANCE}")
         return DEFAULT_INITIAL_BALANCE
 
     amounts = _coerce_amount_series(balances_df[amount_column]).fillna(0.0)
     account_column = _find_account_column(balances_df)
     if account_column is None:
-        logger.warning("Balances sheet did not contain an account-like column.")
+        logger.warning("SQLite balance history did not contain an account-like column.")
         logger.info(f"Returning default initial balance of {DEFAULT_INITIAL_BALANCE}")
         return DEFAULT_INITIAL_BALANCE
 
@@ -392,7 +392,7 @@ def get_total_retirement_savings_balance(
         return matched
 
     logger.warning(
-        "No balance rows matched account patterns %s; using the full sheet total.",
+        "No balance rows matched account patterns %s; using the full balance total.",
         account_patterns,
     )
     result = float(amounts.sum())

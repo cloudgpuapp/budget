@@ -65,8 +65,8 @@ Takeaway: SimpleFIN disclosed it publicly, which is a good sign. It also shows o
 | Transaction data exposed via MX/SimpleFIN bug or breach | Low-medium | Medium | Has happened once (May 2026); data is balances, transactions, account names |
 | Access URL leaked from our Pi/repo/logs | Low-medium | Medium | Grants read access until revoked; fully within our control |
 | SimpleFIN account takeover (email/passkey) | Low | Medium-high | Mitigate with passkey + TOTP; attacker could mint new tokens |
-| SimpleFIN disappears or changes terms | Low-medium | Low | Small operator; our data in the app is a cache of Sheets/own storage |
-| Token disabled due to over-polling | Medium (if buggy) | Low | Limit is about 24 requests/day |
+| SimpleFIN disappears or changes terms | Low-medium | Low | Small operator; local SQLite is the system of record for imported transactions and balances |
+| Token disabled due to over-polling | Low | Low | The app atomically enforces a maximum of 24 all-account requests per day in SQLite |
 
 ### Recommendations
 
@@ -90,12 +90,14 @@ Takeaway: SimpleFIN disclosed it publicly, which is a good sign. It also shows o
  1. Treat the Access URL like a password. Keep it in an environment variable or a file readable only by the app's user (mode 600), outside the repo. `.gitignore` already excludes `*.env`; keep it that way and never commit the URL or Setup Tokens.
  2. Never log the Access URL (it contains credentials in the URL itself). Check error messages, tracebacks, and request logs for leakage.
  3. Require HTTPS when calling the Access URL and refuse redirects so credentials are never replayed to another host.
- 4. Do not expose the Flask app directly to the internet. Keep it on the LAN or behind a VPN/authenticated reverse proxy. The dashboard will show real transactions and has no auth today.
- 5. Set conservative sync behavior: cache aggressively, poll at most a few times per day, use a random minute rather than the top of the hour, and surface any `errlist` errors from the API rather than swallowing them.
+ 4. Do not expose the Flask app directly to the internet. Keep it on the LAN or behind an authenticated reverse proxy/VPN. There is no authentication or CSRF protection, and category, rule, recategorization, and manual transaction-category POST routes can change local data.
+ 5. The app atomically limits SimpleFIN all-account requests to 24 per calendar day using `reserve_simplefin_request`; unsuccessful attempts also consume a reserved request. Prefer a few scheduled polls per day and surface API `errlist` errors.
  6. Encrypt the Pi's disk or at least restrict physical/SSH access, since the Access URL and any cached transaction data live there.
- 7. Store only the data the app needs, and have a plan to delete cached transaction data when we disconnect.
+ 7. Store only the data the app needs. SQLite is the system of record for imported transactions and balances, so secure and back up the database. To erase local data after disconnecting, stop the app and snapshot timer, then delete the configured SQLite file and its `-wal` and `-shm` sidecars; this also removes local categories and rules. See [Database backup and restore](DATABASE.md).
 
 #### Operational
+
+Disconnecting from the Bridge does not erase the local SQLite database. Revoke the Access URL at Bridge, stop scheduled imports, and delete the SQLite database and WAL/SHM sidecars if you want to remove cached transaction and balance records. Back up the database first only if you intend to retain those records.
 
  1. Know the revocation drill: disable the Access URL in the Bridge, mint a new Setup Token, claim it, and update the app's config. Test this once so it isn't first attempted during an incident.
  2. If we ever disconnect, **delete the connection and account at the Bridge** so MX removes the data (about 2 weeks per the privacy policy).

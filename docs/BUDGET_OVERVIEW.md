@@ -7,8 +7,8 @@ the `transactions` table by the calendar month of `posted_date`, falling back
 to `transacted_at` when no posted date is available. Rows with no usable date
 and pending transactions are excluded. Positive amounts are counted as income;
 negative amounts are counted as expenses by absolute value. The monthly
-remaining amount is income minus expenses. Months link to `/transactions` with
-that month selected.
+remaining amount is income minus expenses. Months link to `/transactions?month=YYYY-MM`. That parameter filters the spend
+chart; it does not filter the transaction table.
 
 These are transaction cash-flow totals. They are not the old manually entered
 monthly budget values, do not include pending transactions, and do not imply

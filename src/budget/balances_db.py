@@ -1,4 +1,4 @@
-"""SQLite persistence for daily account balance snapshots."""
+"""SQLite persistence for balance snapshots, transactions, and categorization."""
 
 import logging
 import os

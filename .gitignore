@@ -31,3 +31,7 @@ scripts/
 .issues/
 systemd/
 .coverage
+
+# Private Google service-account credentials
+*service*account*.json
+!docs/example_returns_inflation.csv

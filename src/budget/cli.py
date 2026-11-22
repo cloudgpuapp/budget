@@ -56,9 +56,14 @@ def main():
     )
     claim_parser.add_argument("setup_token", help="One-time SimpleFIN setup token.")
 
-    subparsers.add_parser(
+    simplefin_parser = subparsers.add_parser(
         "simplefin",
         help="Fetch and display current SimpleFIN account balances.",
+    )
+    simplefin_parser.add_argument(
+        "--list-raw-ids",
+        action="store_true",
+        help="List account IDs from SimpleFIN without requiring a config mapping.",
     )
     transactions_parser = subparsers.add_parser(
         "transactions",
@@ -125,13 +130,19 @@ def main():
         return
 
     if args.command in ("simplefin", "snapshot"):
-        accounts = get_accounts()
+        accounts = get_accounts(
+            include_unmapped=bool(getattr(args, "list_raw_ids", False))
+        )
         if args.command == "snapshot":
             insert_balance_snapshots(accounts, source="simplefin")
             print(f"Saved balance snapshot for {len(accounts)} account(s).")
             return
         if not accounts:
             print("No mapped SimpleFIN accounts found.")
+            return
+        if getattr(args, "list_raw_ids", False):
+            for account in accounts:
+                print(f"{account['id']}\t{account['name']}")
             return
         print(f"{'Account':<36} {'Balance':>14}")
         for account in accounts:

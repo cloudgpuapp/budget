@@ -2,9 +2,9 @@
 app.py — Flask web interface for the budget reader.
 
 Routes:
-    GET /                       SQLite transaction summary (monthly trends)
-    GET /month/<sheet_name>     Legacy Google Sheets month detail view
-    POST /refresh               Legacy redirect to balances
+    SQLite pages: /, /transactions, /rules, /balances
+    Legacy Google Sheets page: /month/<sheet_name>
+    JSON endpoints: /api/transactions/spend, /api/balances/trend
 
 Run:
     flask --app app run --debug
@@ -33,6 +33,10 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Legacy Sheets month-detail concurrency controls.
+_MAX_WORKERS = max(1, int(os.environ.get("BUDGET_FETCH_WORKERS", 6)))
+_RESULT_TIMEOUT = max(1, int(os.environ.get("BUDGET_RESULT_TIMEOUT", 20)))
 
 app.jinja_env.filters["urlencode"] = quote
 

@@ -4,6 +4,7 @@ name = "budget"
 version = "0.1.0"
 description = "Small budgeting utilities and CLI for personal finance."
 readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [
     { name = "Joshua Bone", email = "jbone.data@gmail.com" }
@@ -12,6 +13,7 @@ keywords = ["budget", "finance", "cli"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
 ]
 dependencies = [
     "python-dotenv>=1.0.0",

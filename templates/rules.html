@@ -1,9 +1,6 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Categories &amp; Rules · Budget</title>
-  <style>
+{% extends "base.html" %}
+{% block title %}Categories &amp; Rules · Budget{% endblock %}
+{% block page_head %}<style>
     :root{color-scheme:light;--ink:#202b36;--muted:#697786;--line:#dce3e9;--paper:#fff;--wash:#f3f6f8;--blue:#245e86;--blue-dark:#194664;--red:#a34444;--green:#e9f5ed}
     *{box-sizing:border-box}body{margin:0;background:#f5f7f9;color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
     .shell{max-width:1180px;margin:0 auto;padding:24px 24px 64px}.nav{display:flex;gap:18px;border-bottom:1px solid var(--line);padding:0 0 14px;margin-bottom:26px}.nav a{color:var(--blue);font-size:14px;text-decoration:none}.nav a:hover{text-decoration:underline}
@@ -15,9 +12,9 @@
     .table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse}th{text-align:left;background:#f7f9fa;color:var(--muted);font-size:11px;letter-spacing:.07em;text-transform:uppercase;padding:9px 12px;border-bottom:1px solid var(--line)}td{padding:10px 12px;border-bottom:1px solid #e9edf0;vertical-align:middle}tbody tr:last-child td{border-bottom:0}.category-name{font-weight:700}.child-name{padding-left:32px;position:relative}.child-name:before{content:"";position:absolute;left:16px;top:-15px;bottom:50%;width:10px;border-left:1px solid #bdc8d1;border-bottom:1px solid #bdc8d1;border-bottom-left-radius:4px}.pill{display:inline-block;padding:2px 7px;border-radius:99px;background:#edf2f6;color:#566574;font-size:11px}.inline-form{display:flex;align-items:center;gap:6px}.inline-form input,.inline-form select{min-width:115px;max-width:210px}.inline-form .name-input{min-width:145px;max-width:220px}.actions{display:flex;justify-content:flex-end;gap:6px}.category-tree{padding:0}.group{border-bottom:1px solid var(--line)}.group:last-child{border-bottom:0}.group-summary{display:flex;align-items:center;gap:10px;padding:13px 20px;cursor:pointer;list-style:none;font-weight:700}.group-summary::-webkit-details-marker{display:none}.group-summary:before{content:"›";display:inline-grid;place-items:center;width:20px;height:20px;border-radius:5px;background:#edf2f6;color:#526273;transform:rotate(0);transition:transform .15s}.group[open]>.group-summary:before{transform:rotate(90deg)}.group-meta{margin-left:auto;color:var(--muted);font-size:12px;font-weight:500}.child-table{padding:0 12px 12px 22px}.empty{color:var(--muted);padding:12px 20px}.rule-groups{display:grid;gap:10px}.rule-group{border:1px solid var(--line);border-radius:9px;overflow:hidden}.rule-summary{display:flex;gap:10px;align-items:center;padding:11px 13px;background:#f8fafb;cursor:pointer;list-style:none;font-weight:700}.rule-summary::-webkit-details-marker{display:none}.rule-summary:before{content:"›";font-size:18px;line-height:1;color:#627283;transition:transform .15s}.rule-group[open] .rule-summary:before{transform:rotate(90deg)}.rule-count{margin-left:auto;color:var(--muted);font-size:12px;font-weight:500}.rule-list{padding:0 12px 12px}.rule-row{padding:12px 0;border-bottom:1px solid #e9edf0}.rule-row:last-child{border-bottom:0}.rule-form{display:grid;grid-template-columns:minmax(100px,1fr) minmax(130px,1.1fr) minmax(130px,1.2fr) 86px minmax(100px,.7fr) auto;gap:8px;align-items:end}.rule-actions{display:flex;gap:6px}.rule-delete{margin:6px 0 0;text-align:right}.rule-match{display:flex;align-items:center;gap:8px}.rule-match input{min-width:100px}.rule-match-label{font-size:11px;color:var(--muted);white-space:nowrap}.rule-name{font-size:12px;color:#35485a;margin:0 0 5px}.rule-name em{color:var(--muted);font-weight:400}.section-title{margin:25px 0 10px;font-size:14px;color:#435361}.rule-add{display:grid;grid-template-columns:1fr 1.2fr 1.2fr 90px auto;align-items:end;gap:9px}
     @media(max-width:800px){.hero{display:block}.quick-add{margin-top:18px;width:100%}.rule-form{grid-template-columns:1fr 1fr}.rule-actions{grid-column:1/-1;justify-content:flex-end}.rule-add{grid-template-columns:1fr 1fr}.rule-add button{grid-column:1/-1}.panel-head{align-items:flex-start}.inline-form{flex-wrap:wrap}}
     @media(max-width:520px){.shell{padding:16px 12px 40px}.nav{margin-bottom:20px}.hero{margin-bottom:14px}h1{font-size:26px}.panel-head{padding:15px}.panel-body{padding:14px}.form-grid{grid-template-columns:1fr}.form-grid button{width:100%}.panel-head{flex-wrap:wrap}.toolbar{width:100%}.toolbar form,.toolbar button{width:100%}.rule-form,.rule-add{grid-template-columns:1fr}.rule-actions,.rule-add button{grid-column:auto}.rule-match{align-items:flex-start;flex-direction:column}.inline-form input,.inline-form select{max-width:none}.actions{justify-content:flex-start}}
-  </style>
-</head>
-<body><main class="shell">
+  </style>{% endblock %}
+{% block content %}
+<main class="shell">
   <nav class="nav" aria-label="Main navigation"><a href="/transactions">Transactions</a><a href="/balances">Balances</a></nav>
   {% for category, message in get_flashed_messages(with_categories=true) %}<p class="flash {{ category }}" role="status">{{ message }}</p>{% endfor %}
   <header class="hero"><div><p class="eyebrow">Budget setup</p><h1>Categories &amp; Rules</h1><p class="intro">Organize spending categories and automate transaction labeling.</p></div>
@@ -52,4 +49,5 @@
       </div></details>{% endif %}{% endfor %}
     </div>{% else %}<p class="empty">No rules yet. Add one above to start categorizing automatically.</p>{% endif %}
   </div></section>
-</main></body></html>
+</main>
+{% endblock %}

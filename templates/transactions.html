@@ -1,7 +1,6 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Transactions</title>
-<style>
+{% extends "base.html" %}
+{% block title %}Transactions{% endblock %}
+{% block page_head %}<style>
 body{font:16px system-ui;max-width:1300px;margin:2rem auto;padding:0 1rem;color:#222}a{color:#245}h1{margin:1.5rem 0}form.filters{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:1rem 0;padding:1rem;background:#f4f5f7}input,select,button{font:inherit;padding:.4rem}
 .cat-dropdown{position:relative;display:inline-block;vertical-align:middle}
 .cat-dropdown summary{padding:.4rem .6rem;border:1px solid #767676;border-radius:2px;background:#fff;cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:.5rem;min-width:11rem;justify-content:space-between;user-select:none}
@@ -14,9 +13,9 @@ body{font:16px system-ui;max-width:1300px;margin:2rem auto;padding:0 1rem;color:
 .cat-menu input{margin:0;padding:0}
 .cat-select-all{border-bottom:1px solid #ddd;font-weight:600;margin-bottom:.2rem}
 table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.6rem;border-bottom:1px solid #ddd;vertical-align:top}th{white-space:nowrap}.amount{text-align:right;white-space:nowrap}.pending,.manual{font-size:.75rem;border-radius:1rem;background:#fff1c2;padding:.15rem .5rem;color:#654b00;white-space:nowrap}.manual{background:#e8eef8;color:#345}.description{min-width:18rem}.actions{white-space:nowrap}.pagination{display:flex;justify-content:space-between;margin:1rem 0}.muted{color:#666;font-size:.9rem}.spend{display:grid;grid-template-columns:220px 1fr;gap:1.5rem;align-items:center;padding:1rem;background:#f8f9fa;border-radius:.5rem}.pie{display:block;width:200px;height:200px;margin:auto;cursor:pointer}.pie-tooltip{position:fixed;z-index:10;pointer-events:none;padding:.35rem .55rem;background:#222;color:#fff;border-radius:.25rem;font-size:.85rem;box-shadow:0 2px 6px #0003}.pie-tooltip[hidden]{display:none}.legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:.5rem 1rem;list-style:none;padding:0}.legend li{display:flex;gap:.5rem;align-items:center}.swatch{width:.8rem;height:.8rem;border-radius:2px;flex:none}@media(max-width:600px){.spend{grid-template-columns:1fr}.pie{width:170px;height:170px}}
-</style></head><body>
-<a href="/">Budget</a> · <a href="/rules">Categories &amp; Rules</a> · <a href="/balances">Balances</a>
-<h1>Transactions</h1>
+</style>{% endblock %}
+{% block content %}
+<main class="wrap"><nav class="nav" aria-label="Main navigation"><a href="/">Budget</a><a href="/balances">Balances</a><a href="/rules">Categories &amp; Rules</a></nav><header><p class="eyebrow">Activity</p><h1>Transactions</h1></header>
 <form class="filters" method="get" action="{{ url_for('transactions') }}">
 <label>Account <select name="account_id"><option value="">All accounts</option>{% for id,name in accounts %}<option value="{{ id }}" {% if filters.account_id == id %}selected{% endif %}>{{ name }}</option>{% endfor %}</select></label>
 <label>Owner <select name="owner"><option value="">All owners</option>{% for value in owners %}<option value="{{ value }}" {% if filters.owner == value %}selected{% endif %}>{{ value }}</option>{% endfor %}</select></label>
@@ -53,4 +52,5 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.6rem;bo
 </tbody></table>
 <nav class="pagination">{% if page > 1 %}<a href="{{ url_for('transactions', page=page-1, **filters) }}">← Previous</a>{% else %}<span></span>{% endif %}<span>Page {{ page }} of {{ pages }}</span>{% if page < pages %}<a href="{{ url_for('transactions', page=page+1, **filters) }}">Next →</a>{% endif %}</nav>
 <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
-</body></html>
+</main>
+{% endblock %}

@@ -4,13 +4,18 @@ import logging
 from dotenv import load_dotenv
 
 from budget.analyze import build_budget
-from budget.config import ConfigError, get_env, load_toml
-from budget.display import print_section
-from budget.simplefin import claim_setup_token, get_accounts, get_transactions
 from budget.balances_db import (
     import_balance_history,
     insert_balance_snapshots,
     insert_simplefin_transactions,
+)
+from budget.config import ConfigError, get_env, load_toml
+from budget.display import print_section
+from budget.retirement_forecast import (
+    RetirementForecastConfig,
+    get_current_retirement_savings_contributions,
+    get_total_retirement_savings_balance,
+    run_retirement_forecast,
 )
 from budget.sheets import (
     Resource,
@@ -19,12 +24,7 @@ from budget.sheets import (
     get_balances_df,
     list_sheet_names,
 )
-from budget.retirement_forecast import (
-    RetirementForecastConfig,
-    get_current_retirement_savings_contributions,
-    get_total_retirement_savings_balance,
-    run_retirement_forecast,
-)
+from budget.simplefin import claim_setup_token, get_accounts, get_transactions
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +134,15 @@ def main():
             include_unmapped=bool(getattr(args, "list_raw_ids", False))
         )
         if args.command == "snapshot":
-            insert_balance_snapshots(accounts, source="simplefin")
+            # A daily fetch is a snapshot of what SimpleFIN returned today.
+            # Its per-account ``date`` is the institution's balance as-of date,
+            # which can remain unchanged across many fetches and would cause
+            # each run to overwrite the previous snapshot.
+            snapshots = [
+                {"name": account["name"], "balance": account["balance"]}
+                for account in accounts
+            ]
+            insert_balance_snapshots(snapshots, source="simplefin")
             print(f"Saved balance snapshot for {len(accounts)} account(s).")
             return
         if not accounts:

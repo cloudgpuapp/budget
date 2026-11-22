@@ -5,14 +5,15 @@
 ### Added
 
 - Hover over a spend chart category to see its name.
+- Nested Categories
 
 ### Development
 
 - Migrated the frontend to TypeScript and added the `npm run build` bundle step.
 
-### Features
+### Fixed
 
-- Nested Categories
+- Every balance snapshot was overwriting the last one.
 
 ## v0.1.0
 

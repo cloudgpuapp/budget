@@ -2,25 +2,27 @@
 
 ## Unreleased
 
-### Changes in Behavior
-
-- The home page now reads monthly cash-flow totals from SQLite transactions rather than configured monthly Google Sheets values.
-- Google Sheets remains available for legacy commands and the `/month/<sheet_name>` route.
-- Added SQLite-backed balances, SimpleFIN transaction imports, transaction browsing, and a category spend chart.
-
 ### Added
 
-- SimpleFIN setup-token claiming, mapped account balances, daily balance snapshots, and transaction upserts.
-- SQLite categories, ordered categorization rules, automatic categorization on upsert, and manual category overrides.
-- Transactions, rules, and balances dashboard pages plus JSON endpoints for spend and balance trends.
-- Frontend TypeScript build and hover labels for spend chart categories.
-- Database, categorization, deployment, route, and security documentation.
-
-### Fixed
-
-- SimpleFIN requests are limited to 24 per calendar day using atomic reservations in SQLite.
-- Pending transactions are stored and updated when later SimpleFIN responses change their state.
+- Hover over a spend chart category to see its name.
 
 ### Development
 
-- Added a TypeScript frontend build using `npm run build`.
+- Migrated the frontend to TypeScript and added the `npm run build` bundle step.
+
+## v0.1.0
+
+### Added
+
+- SimpleFIN setup-token claiming, mapped account balances, daily SQLite balance snapshots, and
+  transaction imports.
+- SQLite categories, ordered categorization rules, automatic categorization on transaction upsert,
+  and manual category overrides.
+- Transactions, rules, and balances dashboard pages, including a category spend chart and balance
+  history.
+- JSON endpoints for spend and balance trends.
+
+### Fixed
+
+- Enforced the daily SimpleFIN request limit with atomic SQLite reservations.
+- Preserved pending-transaction updates when repeated imports return changed transaction state.

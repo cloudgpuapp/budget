@@ -1,4 +1,8 @@
 import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from app import app, load_sqlite_monthly_trends
 from budget.balances_db import _connect

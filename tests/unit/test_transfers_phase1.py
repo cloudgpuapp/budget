@@ -54,6 +54,38 @@ def test_categories_migrate_with_transfer_flag_default(tmp_path):
     assert flag == 0
 
 
+def test_existing_transfer_category_is_flagged_by_migration(tmp_path):
+    db_path = tmp_path / "existing-transfer.sqlite3"
+    connection = _connect(db_path)
+    connection.execute("INSERT INTO categories(name) VALUES ('Transfer')")
+    connection.execute("PRAGMA user_version = 5")
+    connection.commit()
+    connection.close()
+
+    connection = _connect(db_path)
+    flag = connection.execute(
+        "SELECT is_transfer FROM categories WHERE name='Transfer'"
+    ).fetchone()[0]
+    connection.close()
+    assert flag == 1
+
+
+def test_existing_transfers_category_is_flagged_by_migration(tmp_path):
+    db_path = tmp_path / "existing-transfers.sqlite3"
+    connection = _connect(db_path)
+    connection.execute("INSERT INTO categories(name) VALUES ('Transfers')")
+    connection.execute("PRAGMA user_version = 6")
+    connection.commit()
+    connection.close()
+
+    connection = _connect(db_path)
+    flag = connection.execute(
+        "SELECT is_transfer FROM categories WHERE name='Transfers'"
+    ).fetchone()[0]
+    connection.close()
+    assert flag == 1
+
+
 def test_transfer_flag_controls_category_ui(monkeypatch, tmp_path):
     transfer_id = _seed_transfer_data(monkeypatch, tmp_path)
     client = app.test_client()
@@ -71,6 +103,13 @@ def test_transfer_flag_controls_category_ui(monkeypatch, tmp_path):
         r'<label><input type="checkbox" class="cat-cb" name="category_id" value="' + str(transfer_id),
         response.get_data(as_text=True),
     )
+
+    # Checked HTML forms submit both hidden 0 and checked 1 values.
+    client.post(
+        f"/categories/{transfer_id}/transfer",
+        data={"is_transfer": ["0", "1"]},
+    )
+    assert client.get("/api/transactions/spend").get_json()["total"] == 20
 
 
 def test_transactions_toggle_count_and_spend_exclusions(monkeypatch, tmp_path):

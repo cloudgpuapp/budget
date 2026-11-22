@@ -30,6 +30,7 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
     connection = sqlite3.connect(path, timeout=30)
     connection.execute("PRAGMA journal_mode=WAL")
     connection.execute("PRAGMA foreign_keys=ON")
+    schema_version = connection.execute("PRAGMA user_version").fetchone()[0]
     connection.execute("""
         CREATE TABLE IF NOT EXISTS balance_snapshots (
             account TEXT NOT NULL,
@@ -89,6 +90,12 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
         connection.execute("ALTER TABLE categories ADD COLUMN parent_id INTEGER REFERENCES categories(id) ON DELETE RESTRICT")
     if "is_transfer" not in category_columns:
         connection.execute("ALTER TABLE categories ADD COLUMN is_transfer INTEGER NOT NULL DEFAULT 0")
+    if schema_version < 7:
+        # Transfer categories may already exist under either common spelling.
+        connection.execute(
+            "UPDATE categories SET is_transfer=1 WHERE name COLLATE NOCASE IN ('Transfer', 'Transfers')"
+        )
+        connection.commit()
     connection.execute("""CREATE TRIGGER IF NOT EXISTS categories_parent_insert
         BEFORE INSERT ON categories WHEN NEW.parent_id IS NOT NULL
         BEGIN
@@ -146,7 +153,7 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
         connection.execute(
             "ALTER TABLE balance_snapshots ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
         )
-    connection.execute("PRAGMA user_version = 5")
+    connection.execute("PRAGMA user_version = 7")
     return connection
 
 

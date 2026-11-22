@@ -2,7 +2,7 @@
 
 SQLite is the system of record for imported transactions and balance history. The path comes from `BUDGET_DB_PATH`; otherwise it is `~/.local/share/budget/balances.sqlite3`, or `$XDG_DATA_HOME/budget/balances.sqlite3` when `XDG_DATA_HOME` is set. SQLite uses WAL mode and foreign keys.
 
-The current schema sets `PRAGMA user_version = 5`:
+The current schema sets `PRAGMA user_version = 7`:
 
 | Table | Contents |
 | --- | --- |
@@ -13,7 +13,7 @@ The current schema sets `PRAGMA user_version = 5`:
 | `categories` | User-defined transaction categories with optional one-level `parent_id` hierarchy and an `is_transfer` flag. |
 | `categorization_rules` | Ordered active/inactive rules and their JSON conditions. |
 
-Schema setup and migrations happen in `balances_db._connect()`: it creates missing tables/indexes, checks existing columns, applies additive changes with `ALTER TABLE`, then sets `user_version` to 5. Categories include an `is_transfer` flag used to keep transfers out of income and spending summaries. Category names remain globally unique without regard to parent. Keep a backup before replacing the application with a version that changes the schema.
+Schema setup and migrations happen in `balances_db._connect()`: it creates missing tables/indexes, checks existing columns, applies additive changes with `ALTER TABLE`, then sets `user_version` to 7. Categories include an `is_transfer` flag used to keep transfers out of income and spending summaries. The migration marks existing categories named `Transfer` or `Transfers` as transfer categories. Category names remain globally unique without regard to parent. Keep a backup before replacing the application with a version that changes the schema.
 
 ## Backup and restore
 

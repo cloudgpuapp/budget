@@ -87,6 +87,8 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
     category_columns = {row[1] for row in connection.execute("PRAGMA table_info(categories)")}
     if "parent_id" not in category_columns:
         connection.execute("ALTER TABLE categories ADD COLUMN parent_id INTEGER REFERENCES categories(id) ON DELETE RESTRICT")
+    if "is_transfer" not in category_columns:
+        connection.execute("ALTER TABLE categories ADD COLUMN is_transfer INTEGER NOT NULL DEFAULT 0")
     connection.execute("""CREATE TRIGGER IF NOT EXISTS categories_parent_insert
         BEFORE INSERT ON categories WHEN NEW.parent_id IS NOT NULL
         BEGIN
@@ -144,7 +146,7 @@ def _connect(db_path: str | os.PathLike[str] | None = None) -> sqlite3.Connectio
         connection.execute(
             "ALTER TABLE balance_snapshots ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"
         )
-    connection.execute("PRAGMA user_version = 4")
+    connection.execute("PRAGMA user_version = 5")
     return connection
 
 

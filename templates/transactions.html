@@ -25,7 +25,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.6rem;bo
     <div class="cat-menu">
       <label class="cat-select-all"><input type="checkbox" id="catSelectAll"> Select All</label>
       <label><input type="checkbox" class="cat-cb" name="category_id" value="uncategorized" {% if 'uncategorized' in filters.category_id %}checked{% endif %}>Uncategorized</label>
-      {% for id,name in categories %}<label><input type="checkbox" class="cat-cb" name="category_id" value="{{ id }}" {% if id|string in filters.category_id %}checked{% endif %}>{{ name }}</label>{% endfor %}
+      {% for id,name in chart_categories %}<label><input type="checkbox" class="cat-cb" name="category_id" value="{{ id }}" {% if id|string in filters.category_id %}checked{% endif %}>{{ name }}</label>{% endfor %}
     </div>
   </details>
 </span>
@@ -34,6 +34,7 @@ table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:.6rem;bo
 <label>Month <select name="month"><option value="">All available dates</option>{% for month in months %}<option value="{{ month }}" {% if selected_month == month %}selected{% endif %}>{{ month }}</option>{% endfor %}</select></label>
 <label>From <input type="date" name="start_date" value="{{ start_date }}"></label><label>Through <input type="date" name="end_date" value="{{ end_date }}"></label>
 <label><input type="checkbox" name="leaf" value="1" {% if not rollup %}checked{% endif %}> Show leaf categories</label>
+<label><input type="checkbox" name="show_transfers" value="1" {% if show_transfers %}checked{% endif %}> Show transfers</label>
 <button>Apply filters</button>
 </form>
 <h2>Spend by category</h2>

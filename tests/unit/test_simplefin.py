@@ -195,6 +195,8 @@ def test_http_status_is_reported_without_secret_url(operation, monkeypatch, tmp_
 
 def test_daily_request_limit_is_enforced(monkeypatch, tmp_path):
     monkeypatch.setenv("BUDGET_DB_PATH", str(tmp_path / "balances.sqlite3"))
+    # This test verifies the documented default cap, regardless of the caller's env.
+    monkeypatch.delenv("SIMPLEFIN_DAILY_REQUEST_LIMIT", raising=False)
     with patch(
         "budget.simplefin.requests.get", return_value=response(payload={"accounts": []})
     ) as get:

@@ -75,7 +75,7 @@ def _fetch_one(
     summary_config: dict,
 ) -> tuple[str, dict]:
     """Fetch and build budget for a single sheet. Designed for thread use."""
-    logger.info(f"  Fetching '{sheet}'...")
+    logger.info("Fetching sheet '%s'...", sheet)
     cell_values = fetch_cells(service, spreadsheet_id, sheet, all_refs)
     budget = build_budget(cells_config, cell_values, summary_config)
     return sheet, budget
@@ -112,7 +112,9 @@ def load_all_months() -> dict[str, dict]:
     sheet_names.sort(key=_sort_key)
 
     logger.info(
-        f"Discovered {len(sheet_names)} sheet(s), fetching with {_MAX_WORKERS} workers..."
+        "Discovered %d sheet(s), fetching with %d workers...",
+        len(sheet_names),
+        _MAX_WORKERS,
     )
 
     result: dict[str, dict] = {}
@@ -141,10 +143,10 @@ def load_all_months() -> dict[str, dict]:
                 sheet_name, budget = future.result(timeout=_RESULT_TIMEOUT)
                 result[sheet_name] = budget
                 log_fn = logger.warning if elapsed > 5 else logger.info
-                log_fn(f"Fetched sheet '{sheet}' in {elapsed:.2f}s")
+                log_fn("Fetched sheet '%s' in %.2fs", sheet, elapsed)
             except Exception as e:
-                logger.error(
-                    f"Failed to fetch sheet '{sheet}' after {elapsed:.2f}s: {e}"
+                logger.exception(
+                    "Failed to fetch sheet '%s' after %.2fs: %s", sheet, elapsed, e
                 )
 
     # Re-sort after parallel completion (arrival order is non-deterministic)

@@ -25,7 +25,7 @@ The app skips unmapped accounts. To list raw account IDs before creating the map
 
 - `budget simplefin` fetches and displays balances for mapped accounts.
 - `budget snapshot` saves mapped account balances to `balance_snapshots` with source `simplefin`.
-- `budget transactions` upserts mapped transactions to SQLite. Its default window is the most recent 90 days. `--start-date` is inclusive and `--end-date` exclusive; a request cannot exceed 90 days.
+- `budget transactions` upserts mapped transactions to SQLite. Its default window is the most recent 90 days. `--start-date` is inclusive and `--end-date` exclusive; longer windows are fetched in consecutive requests of up to 90 days each. Each request counts against the daily SimpleFIN request limit.
 
 The client reserves each all-account API request in SQLite before sending it and enforces a maximum of 24 requests per calendar day by default. Set `SIMPLEFIN_DAILY_REQUEST_LIMIT` to a positive integer to choose a different cap (for example, `12`). The cap is enforced independently in each configured `BUDGET_DB_PATH`; separate Pi and Mac databases do not share or coordinate their counts. A failed request still consumes a reserved slot. Requests require HTTPS and redirects are refused. Transaction upserts use account ID plus transaction ID, so overlapping imports update existing records rather than duplicate them. Pending transactions are stored; a later fetch can update a transaction as it posts or changes.
 

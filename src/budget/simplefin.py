@@ -196,8 +196,9 @@ def get_transactions(
 ) -> list[dict[str, Any]]:
     """Fetch mapped accounts and transactions in a SimpleFIN date window.
 
-    The end date is exclusive as required by SimpleFIN. The default window is
-    the 90 days ending tomorrow, so it stays within Bridge's per-request limit.
+    The end date is exclusive as required by SimpleFIN. Longer windows are
+    fetched in consecutive 90-day chunks to stay within Bridge's per-request
+    limit.
     """
     if access_url is None:
         access_url = get_env("SIMPLEFIN_ACCESS_URL")
@@ -217,58 +218,69 @@ def get_transactions(
         )
         end = end or today + timedelta(days=1)
         start = start or end - timedelta(days=90)
-        if start >= end or (end - start).days > 90:
+        if start >= end:
             raise ValueError("invalid date window")
-        params = {
-            "start-date": int(datetime.combine(start, time.min, UTC).timestamp()),
-            "end-date": int(datetime.combine(end, time.min, UTC).timestamp()),
-        }
         parts = urlsplit(access_url)
         if parts.scheme != "https" or not parts.hostname:
             raise ValueError("invalid access URL")
         request_limit = _daily_request_limit()
-        if not reserve_simplefin_request(limit=request_limit):
-            raise SimpleFINError(
-                f"SimpleFIN daily request limit reached ({request_limit} requests)"
-            )
         endpoint = urlunsplit(
             (parts.scheme, parts.netloc, parts.path.rstrip("/") + "/accounts", "", "")
         )
-        response = requests.get(
-            endpoint, params=params, timeout=_FETCH_TIMEOUT, allow_redirects=False
-        )
-        response.raise_for_status()
-        payload = response.json()
-        accounts = payload["accounts"]
-        if not isinstance(accounts, list):
-            raise TypeError("accounts is not a list")
-        errors = payload.get("errlist", [])
-        if errors:
-            safe_errors = [
-                re.sub(r"https?://\S+", "[redacted URL]", str(error)).replace(
-                    access_url, "[redacted]"
+        normalized_by_id: dict[str, dict[str, Any]] = {}
+        chunk_start = start
+        while chunk_start < end:
+            chunk_end = min(chunk_start + timedelta(days=90), end)
+            if not reserve_simplefin_request(limit=request_limit):
+                raise SimpleFINError(
+                    f"SimpleFIN daily request limit reached ({request_limit} requests)"
                 )
-                for error in errors
-            ]
-            raise SimpleFINError(
-                "SimpleFIN reported account errors: " + "; ".join(safe_errors)
+            params = {
+                "start-date": int(
+                    datetime.combine(chunk_start, time.min, UTC).timestamp()
+                ),
+                "end-date": int(datetime.combine(chunk_end, time.min, UTC).timestamp()),
+            }
+            response = requests.get(
+                endpoint, params=params, timeout=_FETCH_TIMEOUT, allow_redirects=False
             )
-        normalized = []
-        for account in accounts:
-            account_id = account["id"]
-            display_name = account_names.get(account_id)
-            if display_name is None:
-                logger.warning("Skipping unmapped SimpleFIN account id %s", account_id)
-                continue
-            transactions = account.get("transactions", [])
-            if not isinstance(transactions, list):
-                raise TypeError("transactions is not a list")
-            normalized.append(
-                {"id": account_id, "name": display_name,
-                 "owner": account_owners.get(account_id, account.get("owner")),
-                 "transactions": transactions}
-            )
-        return normalized
+            response.raise_for_status()
+            payload = response.json()
+            accounts = payload["accounts"]
+            if not isinstance(accounts, list):
+                raise TypeError("accounts is not a list")
+            errors = payload.get("errlist", [])
+            if errors:
+                safe_errors = [
+                    re.sub(r"https?://\S+", "[redacted URL]", str(error)).replace(
+                        access_url, "[redacted]"
+                    )
+                    for error in errors
+                ]
+                raise SimpleFINError(
+                    "SimpleFIN reported account errors: " + "; ".join(safe_errors)
+                )
+            for account in accounts:
+                account_id = account["id"]
+                display_name = account_names.get(account_id)
+                if display_name is None:
+                    logger.warning("Skipping unmapped SimpleFIN account id %s", account_id)
+                    continue
+                transactions = account.get("transactions", [])
+                if not isinstance(transactions, list):
+                    raise TypeError("transactions is not a list")
+                normalized = normalized_by_id.setdefault(
+                    account_id,
+                    {
+                        "id": account_id,
+                        "name": display_name,
+                        "owner": account_owners.get(account_id, account.get("owner")),
+                        "transactions": [],
+                    },
+                )
+                normalized["transactions"].extend(transactions)
+            chunk_start = chunk_end
+        return list(normalized_by_id.values())
     except SimpleFINError:
         raise
     except requests.exceptions.JSONDecodeError:

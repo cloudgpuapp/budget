@@ -40,6 +40,7 @@ Store the printed access URL as a secret. Example `.env` settings:
 
 ```dotenv
 SIMPLEFIN_ACCESS_URL=https://bridge.simplefin.org/your-issued-access-path
+SIMPLEFIN_DAILY_REQUEST_LIMIT=12
 BUDGET_DB_PATH=/absolute/path/to/budget.sqlite3
 FLASK_SECRET_KEY=replace-with-a-long-random-secret
 BUDGET_CONFIG=/absolute/path/to/config.toml
@@ -112,6 +113,7 @@ proxy. See [Security](docs/SECURITY.md).
 | Setting                      | Purpose                                                                              | Default                                                                                |
 | ---------------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
 | `SIMPLEFIN_ACCESS_URL`       | SimpleFIN Bridge bearer access URL                                                   | Required for SimpleFIN commands                                                        |
+| `SIMPLEFIN_DAILY_REQUEST_LIMIT` | Maximum all-account SimpleFIN requests per day for this database                  | `24`                                                                                    |
 | `BUDGET_DB_PATH`             | SQLite database file path                                                            | `~/.local/share/budget/balances.sqlite3` (or `$XDG_DATA_HOME/budget/balances.sqlite3`) |
 | `FLASK_SECRET_KEY`           | Stable Flask session signing key for flash messages                                  | Random per process if unset; set for multi-worker/restart persistence                  |
 | `BUDGET_CONFIG`              | TOML config, including `[simplefin.accounts]`; also needed by legacy Sheets commands | Required by commands that load config                                                  |

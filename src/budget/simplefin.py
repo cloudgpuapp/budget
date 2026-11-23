@@ -23,7 +23,26 @@ from budget.balances_db import reserve_simplefin_request
 from budget.config import get_env, load_toml
 
 _FETCH_TIMEOUT = int(os.environ.get("BUDGET_FETCH_TIMEOUT", 15))
+_DEFAULT_DAILY_REQUEST_LIMIT = 24
 logger = logging.getLogger(__name__)
+
+
+def _daily_request_limit() -> int:
+    """Return the configured per-database daily request cap."""
+    raw_limit = os.environ.get("SIMPLEFIN_DAILY_REQUEST_LIMIT")
+    if raw_limit is None:
+        return _DEFAULT_DAILY_REQUEST_LIMIT
+    try:
+        limit = int(raw_limit)
+    except ValueError:
+        raise SimpleFINError(
+            "SIMPLEFIN_DAILY_REQUEST_LIMIT must be a positive integer"
+        ) from None
+    if limit < 1:
+        raise SimpleFINError(
+            "SIMPLEFIN_DAILY_REQUEST_LIMIT must be a positive integer"
+        )
+    return limit
 
 
 class SimpleFINError(Exception):
@@ -91,8 +110,11 @@ def get_accounts(
         parts = urlsplit(access_url)
         if parts.scheme != "https" or not parts.hostname:
             raise ValueError("invalid access URL")
-        if not reserve_simplefin_request(limit=24):
-            raise SimpleFINError("SimpleFIN daily request limit reached (24 requests)")
+        request_limit = _daily_request_limit()
+        if not reserve_simplefin_request(limit=request_limit):
+            raise SimpleFINError(
+                f"SimpleFIN daily request limit reached ({request_limit} requests)"
+            )
         endpoint = urlunsplit(
             (parts.scheme, parts.netloc, parts.path.rstrip("/") + "/accounts", "", "")
         )
@@ -204,8 +226,11 @@ def get_transactions(
         parts = urlsplit(access_url)
         if parts.scheme != "https" or not parts.hostname:
             raise ValueError("invalid access URL")
-        if not reserve_simplefin_request(limit=24):
-            raise SimpleFINError("SimpleFIN daily request limit reached (24 requests)")
+        request_limit = _daily_request_limit()
+        if not reserve_simplefin_request(limit=request_limit):
+            raise SimpleFINError(
+                f"SimpleFIN daily request limit reached ({request_limit} requests)"
+            )
         endpoint = urlunsplit(
             (parts.scheme, parts.netloc, parts.path.rstrip("/") + "/accounts", "", "")
         )

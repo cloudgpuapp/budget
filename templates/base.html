@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body>
+  {% if budget_staging %}<aside class="staging-banner" role="status">STAGING INSTANCE</aside>{% endif %}
   {% block content %}{% endblock %}
 </body>
 </html>

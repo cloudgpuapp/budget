@@ -115,6 +115,7 @@ proxy. See [Security](docs/SECURITY.md).
 | `SIMPLEFIN_ACCESS_URL`       | SimpleFIN Bridge bearer access URL                                                   | Required for SimpleFIN commands                                                        |
 | `SIMPLEFIN_DAILY_REQUEST_LIMIT` | Maximum all-account SimpleFIN requests per day for this database                  | `24`                                                                                    |
 | `BUDGET_DB_PATH`             | SQLite database file path                                                            | `~/.local/share/budget/balances.sqlite3` (or `$XDG_DATA_HOME/budget/balances.sqlite3`) |
+| `BUDGET_STAGING`             | Show a yellow staging warning banner on every web page (`1`, `true`, `yes`, or `on`) | Disabled                                                                               |
 | `FLASK_SECRET_KEY`           | Stable Flask session signing key for flash messages                                  | Random per process if unset; set for multi-worker/restart persistence                  |
 | `BUDGET_CONFIG`              | TOML config, including `[simplefin.accounts]`; also needed by legacy Sheets commands | Required by commands that load config                                                  |
 | `GOOGLE_SERVICE_ACCOUNT_KEY` | Google service account JSON key for legacy Sheets paths                              | Required only by those paths                                                           |

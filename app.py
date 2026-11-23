@@ -32,8 +32,19 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or secrets.token_hex(32)
+app.config["BUDGET_STAGING"] = os.environ.get("BUDGET_STAGING", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+@app.context_processor
+def inject_instance_mode():
+    return {"budget_staging": app.config["BUDGET_STAGING"]}
 
 # Legacy Sheets month-detail concurrency controls.
 _MAX_WORKERS = max(1, int(os.environ.get("BUDGET_FETCH_WORKERS", 6)))

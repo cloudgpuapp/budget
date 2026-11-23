@@ -115,9 +115,8 @@ def test_timeout_is_reported_without_access_url():
     secret_url = "https://user:secret@bridge.example/api"
     with patch(
         "budget.simplefin.requests.get", side_effect=requests.Timeout(secret_url)
-    ):
-        with pytest.raises(SimpleFINError, match="timed out") as exc:
-            get_accounts(secret_url)
+    ), pytest.raises(SimpleFINError, match="timed out") as exc:
+        get_accounts(secret_url)
     assert secret_url not in str(exc.value)
 
 
@@ -160,9 +159,8 @@ def test_errlist_is_reported_without_access_url(monkeypatch, tmp_path):
         return_value=response(
             payload={"accounts": [], "errlist": [f"bad account at {secret_url}"]}
         ),
-    ):
-        with pytest.raises(SimpleFINError, match="bad account") as exc:
-            get_accounts(secret_url)
+    ), pytest.raises(SimpleFINError, match="bad account") as exc:
+        get_accounts(secret_url)
     assert secret_url not in str(exc.value)
 
 

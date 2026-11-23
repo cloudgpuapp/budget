@@ -188,5 +188,5 @@ def test_build_budget_summary_key_always_present():
 
 def test_build_budget_section_order_matches_config():
     result = build_budget(CELLS_CONFIG, CELL_VALUES, SUMMARY_CONFIG)
-    keys = [k for k in result.keys() if k != "summary"]
+    keys = [k for k in result if k != "summary"]
     assert keys == list(CELLS_CONFIG.keys())

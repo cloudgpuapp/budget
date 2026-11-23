@@ -3,9 +3,10 @@
 import logging
 import os
 import sqlite3
+from collections.abc import Iterable, Mapping
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 import pandas as pd
 

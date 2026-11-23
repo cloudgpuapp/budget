@@ -2,7 +2,8 @@
 
 import json
 import sqlite3
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 
 def _matches(conditions: Mapping[str, Any], transaction: Mapping[str, Any]) -> bool:

@@ -10,8 +10,8 @@ Run:
     flask --app app run --debug
 """
 
-import logging
 import json
+import logging
 import os
 import secrets
 import sqlite3
@@ -22,7 +22,7 @@ from dotenv import load_dotenv
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
 from budget.analyze import build_budget
-from budget.balances_db import _connect, get_balance_history, get_transactions
+from budget.balances_db import _connect, get_balance_history
 from budget.categorizer import categorize_transaction, recategorize_all
 from budget.config import ConfigError, get_env, load_toml
 from budget.sheets import build_service, fetch_cells, list_sheet_names
@@ -84,6 +84,7 @@ def _fetch_one(
 def load_all_months() -> dict[str, dict]:
     """Legacy Sheets loader retained for month detail and other callers."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
+
     from budget.cache import budget_cache
 
     cached = budget_cache.get()

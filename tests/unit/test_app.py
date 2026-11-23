@@ -1,7 +1,6 @@
 import importlib.util
 from pathlib import Path
 
-
 _APP_PATH = Path(__file__).resolve().parents[2] / "app.py"
 _APP_SPEC = importlib.util.spec_from_file_location("budget_web_app", _APP_PATH)
 assert _APP_SPEC is not None and _APP_SPEC.loader is not None

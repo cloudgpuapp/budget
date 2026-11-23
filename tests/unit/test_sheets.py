@@ -9,7 +9,7 @@ from budget.sheets import fetch_cells, get_balances_df, list_sheet_names
 
 
 def make_service(
-    sheet_titles: list[str] = None, batch_values: list = None
+    sheet_titles: list[str] | None = None, batch_values: list | None = None
 ) -> MagicMock:
     """
     Build a minimal mock of the Google Sheets API service.

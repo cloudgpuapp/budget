@@ -64,15 +64,14 @@ def get_balances_df(service: Resource, spreadsheet_id: str) -> pd.DataFrame:
     df = pd.DataFrame(rows, columns=columns)
 
     # Convert Amount to numeric
-    if "Amount" in df.columns:
-        if is_string_dtype(df["Amount"]):
-            amount_text = (
-                df["Amount"]
-                .astype("string")
-                .str.replace("$", "", regex=False)
-                .str.replace(",", "", regex=False)
-            )
-            df["Amount"] = pd.to_numeric(amount_text, errors="coerce")
+    if "Amount" in df.columns and is_string_dtype(df["Amount"]):
+        amount_text = (
+            df["Amount"]
+            .astype("string")
+            .str.replace("$", "", regex=False)
+            .str.replace(",", "", regex=False)
+        )
+        df["Amount"] = pd.to_numeric(amount_text, errors="coerce")
 
     return df
 

@@ -1,6 +1,6 @@
 import pytest
-from budget.utils import cast_to_float
 
+from budget.utils import cast_to_float
 
 # ── Happy path ─────────────────────────────────────────────────────────────────
 

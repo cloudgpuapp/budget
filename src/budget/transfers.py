@@ -1,9 +1,9 @@
 """On-demand suggestions for possible transfers between mapped accounts."""
 
+import sqlite3
 from bisect import bisect_left, bisect_right
 from datetime import date
-from decimal import Decimal, ROUND_HALF_UP
-import sqlite3
+from decimal import ROUND_HALF_UP, Decimal
 
 TRANSFER_MATCH_WINDOW_DAYS = 10
 
@@ -59,7 +59,7 @@ def suggest_transfer_pairs(
     for row in rows:
         transaction_date = date.fromisoformat(row[3])
         amount_cents = int(
-            (abs(Decimal(str(row[4]))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) * 100)
+            abs(Decimal(str(row[4]))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) * 100
         )
         if amount_cents == 0:
             continue

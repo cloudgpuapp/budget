@@ -40,9 +40,8 @@ def test_simplefin_requires_configured_access_url(monkeypatch):
     with patch(
         "budget.cli.get_accounts",
         side_effect=ConfigError("missing SIMPLEFIN_ACCESS_URL"),
-    ):
-        with pytest.raises(ConfigError, match="SIMPLEFIN_ACCESS_URL"):
-            main()
+    ), pytest.raises(ConfigError, match="SIMPLEFIN_ACCESS_URL"):
+        main()
 
 
 def test_snapshot_saves_fetched_accounts(monkeypatch, capsys):

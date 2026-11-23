@@ -1,4 +1,7 @@
+import logging
+
 _MISSING = "—"
+logger = logging.getLogger(__name__)
 
 
 def print_section(section_name: str, rows) -> None:

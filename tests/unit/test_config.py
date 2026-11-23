@@ -1,11 +1,10 @@
 import os
 import textwrap
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from budget.config import ConfigError, get_env, load_toml
 
+from budget.config import ConfigError, get_env, load_toml
 
 # ── get_env ────────────────────────────────────────────────────────────────────
 

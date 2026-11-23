@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import pytest
 
 from budget.retirement_forecast import (
@@ -8,7 +9,62 @@ from budget.retirement_forecast import (
     probability_of_reaching_target,
     simulate_wealth,
     summarize_terminal_wealth,
+    load_historical_data,
+    run_retirement_forecast,
+    get_total_retirement_savings_balance,
+    get_current_retirement_savings_contributions,
 )
+
+
+def test_load_historical_data_validates_and_cleans_csv(tmp_path, caplog):
+    csv = tmp_path / "history.csv"
+    pd.DataFrame({"date": ["2020-02-01", "2020-01-01", "2020-03-01"],
+                  "nominal_return": [0.2, 0.1, None], "inflation": [0.02, 0.01, None]}).to_csv(csv, index=False)
+    frame = load_historical_data(str(csv))
+    assert list(frame.date.dt.month) == [1, 2]
+    assert "Dropped 1 row" in caplog.text
+    with pytest.raises(FileNotFoundError):
+        load_historical_data(str(tmp_path / "missing.csv"))
+    pd.DataFrame({"date": ["2020-01-01"]}).to_csv(csv, index=False)
+    with pytest.raises(ValueError, match="missing required"):
+        load_historical_data(str(csv))
+
+
+def test_load_historical_data_rejects_duplicates_and_warns_missing_month(tmp_path, caplog):
+    csv = tmp_path / "history.csv"
+    pd.DataFrame({"date": ["2020-01-01", "2020-03-01"], "nominal_return": [0, 0], "inflation": [0, 0]}).to_csv(csv, index=False)
+    load_historical_data(str(csv))
+    assert "missing month" in caplog.text
+    pd.DataFrame({"date": ["2020-01-01", "2020-01-01"], "nominal_return": [0, 0], "inflation": [0, 0]}).to_csv(csv, index=False)
+    with pytest.raises(ValueError, match="Duplicate dates"):
+        load_historical_data(str(csv))
+
+
+def test_forecast_runs_and_csv_override_preserves_config(tmp_path):
+    csv = tmp_path / "history.csv"
+    pd.DataFrame({"date": pd.date_range("2020-01-01", periods=3, freq="MS"), "nominal_return": [0.01]*3, "inflation": [0]*3}).to_csv(csv, index=False)
+    config = RetirementForecastConfig(current_age=30, retirement_age=31, life_expectancy=32,
+        block_length_months=2, n_simulations=4, target_real_balance=100, contribution_mode="fixed")
+    result = run_retirement_forecast(config=config, csv_path=str(csv), initial_balance=50, monthly_contribution=10)
+    assert result.config.current_age == 30
+    assert result.nominal_wealth.shape == (4, 25)
+    assert result.contributions.shape == (4, 24)
+    assert result.probability_of_reaching_target == 1
+
+
+def test_retirement_balance_resolution_handles_fallbacks_and_patterns():
+    assert get_total_retirement_savings_balance(balances_df=pd.DataFrame()) == 135838.28
+    assert get_total_retirement_savings_balance(balances_df=pd.DataFrame({"amount": [1]})) == 135838.28
+    frame = pd.DataFrame({"Date": ["2024-02", "2024-02", "2024-02"], "Account Name": ["401k", "checking", "Roth"], "Amount": [10, 20, "$30"]})
+    assert get_total_retirement_savings_balance(balances_df=frame) == 40
+    assert get_total_retirement_savings_balance(balances_df=frame, account_patterns=["no match"]) == 60
+
+
+def test_contribution_resolution_summary_rows_and_fallback():
+    assert get_current_retirement_savings_contributions() == 4306.58
+    assert get_current_retirement_savings_contributions(latest_budget={"summary": {"monthly_contributions": "25"}}) == 25
+    budget = {"summary": {}, "income": [{"label": "401k match", "value": 20}, {"label": "ordinary", "value": 90}, "ignored"]}
+    assert get_current_retirement_savings_contributions(latest_budget=budget) == 20
 
 
 def test_config_calculates_month_horizons():

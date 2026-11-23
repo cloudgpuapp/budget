@@ -3,7 +3,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from budget.simplefin import SimpleFINError, claim_setup_token, get_accounts
+from datetime import date
+
+from budget.simplefin import SimpleFINError, claim_setup_token, get_accounts, get_transactions
 
 
 @pytest.fixture(autouse=True)
@@ -203,3 +205,39 @@ def test_daily_request_limit_is_enforced(monkeypatch, tmp_path):
         with pytest.raises(SimpleFINError, match="daily request limit"):
             get_accounts("https://user:secret@bridge.example/api", {})
     assert get.call_count == 24
+
+
+def test_transactions_fetches_chunks_and_merges_accounts():
+    payloads = [
+        {"accounts": [{"id": "a1", "transactions": [{"id": "t1"}]}]},
+        {"accounts": [{"id": "a1", "transactions": [{"id": "t2"}]},
+                     {"id": "unknown", "transactions": [{"id": "x"}]}]},
+    ]
+    with patch("budget.simplefin.requests.get", side_effect=[response(payload=p) for p in payloads]) as get:
+        result = get_transactions("https://user:secret@bridge.example/api", {"a1": "Savings"},
+            account_owners={"a1": "Me"}, start_date="2024-01-01", end_date="2024-06-01")
+    assert result == [{"id": "a1", "name": "Savings", "owner": "Me",
+                       "transactions": [{"id": "t1"}, {"id": "t2"}]}]
+    assert get.call_count == 2
+    assert get.call_args_list[0].kwargs["params"]["start-date"] < get.call_args_list[1].kwargs["params"]["start-date"]
+
+
+def test_transactions_default_dates_and_validation():
+    with patch("budget.simplefin.requests.get", return_value=response(payload={"accounts": [
+        {"id": "a1", "owner": "Owner", "transactions": []}]})) as get:
+        result = get_transactions("https://bridge.example/api", {"a1": "Checking"}, start_date=date(2024, 1, 1))
+    assert result[0]["owner"] == "Owner"
+    assert get.call_args.kwargs["params"]["end-date"] > get.call_args.kwargs["params"]["start-date"]
+    with pytest.raises(SimpleFINError, match="date range"):
+        get_transactions("https://bridge.example/api", {}, start_date="2024-02-01", end_date="2024-01-01")
+
+
+def test_transactions_reports_daily_limit_and_malformed_payload(monkeypatch):
+    monkeypatch.setenv("SIMPLEFIN_DAILY_REQUEST_LIMIT", "1")
+    with patch("budget.simplefin.requests.get", return_value=response(payload={"accounts": []})):
+        with pytest.raises(SimpleFINError, match="daily request limit"):
+            get_transactions("https://bridge.example/api", {}, start_date="2024-01-01", end_date="2024-06-01")
+    monkeypatch.delenv("SIMPLEFIN_DAILY_REQUEST_LIMIT")
+    with patch("budget.simplefin.requests.get", return_value=response(payload={"accounts": "bad"})):
+        with pytest.raises(SimpleFINError, match="malformed transaction"):
+            get_transactions("https://bridge.example/api", {}, start_date="2024-01-01", end_date="2024-01-02")

@@ -26,5 +26,4 @@ jobs:
         run: uv run ruff check .
 
       - name: Test
-        # Coverage is reported locally; the current baseline is below its 80% gate.
-        run: uv run pytest --no-cov
+        run: uv run pytest

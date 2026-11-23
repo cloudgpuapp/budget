@@ -15,17 +15,24 @@ def _matches(conditions: Mapping[str, Any], transaction: Mapping[str, Any]) -> b
     for condition in rules:
         if not isinstance(condition, dict):
             return False
-        if (
-            condition.get("field") != "description"
-            or condition.get("operator") != "contains"
-        ):
+        field, operator = condition.get("field"), condition.get("operator")
+        if field == "description" and operator == "contains":
+            value = condition.get("value")
+            if not isinstance(value, str) or not value:
+                return False
+            outcomes.append(value.casefold() in str(transaction.get("description") or "").casefold())
+        elif field == "amount" and operator == "between":
+            try:
+                amount = float(transaction["amount"])
+                minimum = float(condition["minimum"])
+                maximum = float(condition["maximum"])
+            except (KeyError, TypeError, ValueError):
+                return False
+            if minimum > maximum:
+                return False
+            outcomes.append(minimum <= amount <= maximum)
+        else:
             return False
-        value = condition.get("value")
-        if not isinstance(value, str) or not value:
-            return False
-        outcomes.append(
-            value.casefold() in str(transaction.get("description") or "").casefold()
-        )
     match_type = conditions.get("match_type", "ALL")
     if match_type == "ALL":
         return all(outcomes)
@@ -57,15 +64,16 @@ def categorize_transaction(
 def categorize_unassigned(connection: sqlite3.Connection) -> int:
     """Apply rules to all non-manual rows and return rows whose category changed."""
     rows = connection.execute(
-        "SELECT account_id, transaction_id, description, category_id, rule_id, "
+        "SELECT account_id, transaction_id, description, amount, category_id, rule_id, "
         "is_manual_category FROM transactions WHERE is_manual_category = 0"
     ).fetchall()
     changed = 0
-    for account_id, transaction_id, description, old_category, old_rule, manual in rows:
+    for account_id, transaction_id, description, amount, old_category, old_rule, manual in rows:
         category_id, rule_id = categorize_transaction(
             connection,
             {
                 "description": description,
+                "amount": amount,
                 "category_id": old_category,
                 "rule_id": old_rule,
                 "is_manual_category": manual,

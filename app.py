@@ -380,9 +380,14 @@ def rules():
     for row in rule_rows:
         try:
             conditions = json.loads(row[6])
-            match_value = conditions.get("rules", [{}])[0].get("value", "")
+            condition = conditions.get("rules", [{}])[0]
+            match_field = condition.get("field", "description")
+            match_value = condition.get("value", "")
+            amount_minimum = condition.get("minimum", "")
+            amount_maximum = condition.get("maximum", "")
         except (json.JSONDecodeError, AttributeError, IndexError):
             match_value = ""
+            match_field, amount_minimum, amount_maximum = "description", "", ""
         rules_data.append(
             {
                 "id": row[0],
@@ -392,6 +397,9 @@ def rules():
                 "priority": row[4],
                 "active": row[5],
                 "match_value": match_value,
+                "match_field": match_field,
+                "amount_minimum": amount_minimum,
+                "amount_maximum": amount_maximum,
             }
         )
     return render_template(
@@ -518,7 +526,20 @@ def delete_category(category_id):
 
 def _save_rule(rule_id=None):
     category_raw = request.form.get("category_id", "")
+    match_field = request.form.get("match_field", "description")
     value = request.form.get("value", "").strip()
+    minimum_raw = request.form.get("minimum", "").strip()
+    maximum_raw = request.form.get("maximum", "").strip()
+    condition = None
+    try:
+        if match_field == "amount":
+            minimum, maximum = float(minimum_raw), float(maximum_raw)
+            if minimum <= maximum:
+                condition = {"field": "amount", "operator": "between", "minimum": minimum, "maximum": maximum}
+        elif match_field == "description" and value:
+            condition = {"field": "description", "operator": "contains", "value": value}
+    except ValueError:
+        condition = None
     try:
         category_id = int(category_raw)
         priority = int(request.form.get("priority", "0"))
@@ -527,19 +548,17 @@ def _save_rule(rule_id=None):
     connection = _connect()
     try:
         if (
-            not value
+            condition is None
             or not connection.execute(
                 "SELECT 1 FROM categories WHERE id=?", (category_id,)
             ).fetchone()
         ):
-            flash("Choose a category and enter a match value.", "error")
+            flash("Choose a category and enter a valid rule criterion.", "error")
         else:
             conditions = json.dumps(
                 {
                     "match_type": "ALL",
-                    "rules": [
-                        {"field": "description", "operator": "contains", "value": value}
-                    ],
+                    "rules": [condition],
                 }
             )
             if rule_id is None:
@@ -621,6 +640,14 @@ def transactions():
     selected_month = request.args.get("month", "").strip()
     start_date = request.args.get("start_date", "").strip()
     end_date = request.args.get("end_date", "").strip()
+    min_amount = request.args.get("min_amount", "").strip()
+    max_amount = request.args.get("max_amount", "").strip()
+    sort = request.args.get("sort", "date").strip()
+    order = request.args.get("order", "desc").lower()
+    if sort not in {"date", "amount"}:
+        sort = "date"
+    if order not in {"asc", "desc"}:
+        order = "desc"
     show_transfers = request.args.get("show_transfers") == "1"
     clauses, values = [], []
     if account_id:
@@ -652,6 +679,18 @@ def transactions():
     if query:
         clauses.append("INSTR(LOWER(t.description), LOWER(?)) > 0")
         values.append(query)
+    try:
+        if min_amount:
+            clauses.append("t.amount >= ?")
+            values.append(float(min_amount))
+    except ValueError:
+        min_amount = ""
+    try:
+        if max_amount:
+            clauses.append("t.amount <= ?")
+            values.append(float(max_amount))
+    except ValueError:
+        max_amount = ""
     # A date range takes precedence when either bound is supplied.
     date_clauses = []
     has_date_range = bool(start_date or end_date)
@@ -684,7 +723,8 @@ def transactions():
                FROM transactions t JOIN accounts a ON a.id=t.account_id LEFT JOIN account_owners ao ON ao.account_id=a.id
                LEFT JOIN categories c ON c.id=t.category_id LEFT JOIN categories parent ON parent.id=c.parent_id"""
             + where
-            + " ORDER BY COALESCE(t.posted_date, t.transacted_at) DESC, t.rowid DESC LIMIT ? OFFSET ?",
+            + (" ORDER BY t.amount " + order.upper() + ", COALESCE(t.posted_date, t.transacted_at) DESC, t.rowid DESC" if sort == "amount" else " ORDER BY COALESCE(t.posted_date, t.transacted_at) " + order.upper() + ", t.rowid DESC")
+            + " LIMIT ? OFFSET ?",
             [*values, per_page, (page - 1) * per_page],
         ).fetchall()
         accounts = connection.execute(
@@ -744,6 +784,10 @@ def transactions():
         "start_date": start_date,
         "end_date": end_date,
         "show_transfers": "1" if show_transfers else "",
+        "min_amount": min_amount,
+        "max_amount": max_amount,
+        "sort": sort,
+        "order": order,
     }
     spend_total = sum(amount for _, amount in spend_rows)
     palette = [
@@ -785,6 +829,8 @@ def transactions():
         spend_total=spend_total,
         rollup=rollup,
         show_transfers=show_transfers,
+        sort=sort,
+        order=order,
     )
 
 
@@ -1058,13 +1104,14 @@ def update_transaction_category(account_id, transaction_id):
             from budget.categorizer import categorize_transaction
 
             transaction = connection.execute(
-                "SELECT description, category_id, rule_id FROM transactions WHERE account_id=? AND transaction_id=?",
+                "SELECT description, amount, category_id, rule_id FROM transactions WHERE account_id=? AND transaction_id=?",
                 (account_id, transaction_id),
             ).fetchone()
             category_id, rule_id = categorize_transaction(
                 connection,
                 {
                     "description": transaction[0],
+                    "amount": transaction[1],
                     "category_id": None,
                     "rule_id": None,
                     "is_manual_category": 0,
